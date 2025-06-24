@@ -7,7 +7,7 @@ on:
     inputs:
       KERNEL_TREE:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenXLab/fusionX_lab_sm8250'
+        default: 'https://github.com/SenXForge/fusionX_forge_sm8250.git'
         required: true
       VERSION:
         description: 'Zip Version'
@@ -85,7 +85,7 @@ jobs:
       - name: Checkout Kernel
         uses: actions/checkout@v4
         with:
-          repository: SenXLab/fusionX_lab_sm8250
+          repository: SenXForge/fusionX_forge_sm8250.git
           ref: base
           path: kernel_tree
           fetch-depth: 1
