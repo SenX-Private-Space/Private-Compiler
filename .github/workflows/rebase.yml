@@ -86,7 +86,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: SenseiiX/fusionX_sm8250
-          ref: rebase
+          ref: rebase2
           path: kernel_tree
           fetch-depth: 1
 
