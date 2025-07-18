@@ -63,7 +63,7 @@ jobs:
         id: cache-clang
         with:
           path: ${{ github.event.inputs.CLANG_TOOLCHAIN == 'aosp clang' && 'clang-aosp' || 'clang-neutron' }}
-          key: ${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ runner.os }}-${{ github.event.inputs.CLANG_TOOLCHAIN == 'aosp clang' && 'r547379' || '10032024-v1' }}
+          key: ${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ runner.os }}-${{ github.event.inputs.CLANG_TOOLCHAIN == 'aosp clang' && 'r563880' || '10032024-v1' }}
           restore-keys: |
             ${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ runner.os }}-
             ${{ github.event.inputs.CLANG_TOOLCHAIN }}-
