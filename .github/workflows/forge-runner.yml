@@ -7,7 +7,7 @@ on:
     inputs:
       KERNEL_TREE:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenX-Private-Space/fusionX_space_ximi_sm8250.git'
+        default: 'https://github.com/SenX-Private-Space/fusionX_private.git'
         required: true
       VERSION:
         description: 'Zip Version'
@@ -72,7 +72,7 @@ jobs:
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang" ]]; then
-            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
+            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/0998f421320ae02fddabec8a78b91bf7620159f6/clang-r563880.tar.gz -O clang.tar.gz
             mkdir -p clang-aosp
             tar -xf clang.tar.gz -C clang-aosp
           else
@@ -86,7 +86,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: SenX-Private-Space/fusionX_space_ximi_sm8250.git
-          ref: base
+          ref: wip-next
           path: kernel_tree
           fetch-depth: 1
 
@@ -390,7 +390,7 @@ jobs:
           <b>📅 Date:</b> {start_date}
           <b>🕔 Build Duration:</b> {build_time}
           <b>📱 Device Codename:</b> munch
-          <b>📑 Branch:</b> base
+          <b>📑 Branch:</b> WIP-PRIVATE
           <b>🔧 Lto:</b> {lto_config}
           <b>⚙️ Toolchain:</b> {clang_toolchain}
           <b>📂 Build Type:</b> {build_type}"""
