@@ -63,7 +63,7 @@ jobs:
         id: cache-clang
         with:
           path: ${{ github.event.inputs.CLANG_TOOLCHAIN == 'aosp clang' && 'clang-aosp' || 'clang-neutron' }}
-          key: ${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ runner.os }}-${{ github.event.inputs.CLANG_TOOLCHAIN == 'aosp clang' && 'r563880' || '10032024-v1' }}
+          key: ${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ runner.os }}-${{ github.event.inputs.CLANG_TOOLCHAIN == 'aosp clang' && 'r547379' || '10032024-v1' }}
           restore-keys: |
             ${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ runner.os }}-
             ${{ github.event.inputs.CLANG_TOOLCHAIN }}-
@@ -72,7 +72,7 @@ jobs:
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang" ]]; then
-            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/0998f421320ae02fddabec8a78b91bf7620159f6/clang-r563880.tar.gz -O clang.tar.gz
+           wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
             mkdir -p clang-aosp
             tar -xf clang.tar.gz -C clang-aosp
           else
