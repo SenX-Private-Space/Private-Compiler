@@ -85,7 +85,7 @@ jobs:
       - name: Checkout Kernel
         uses: actions/checkout@v4
         with:
-          repository: SenX-Private-Space/fusionX_space_ximi_sm8250.git
+          repository: SenX-Private-Space/fusionX_private
           ref: wip-next
           path: kernel_tree
           fetch-depth: 1
