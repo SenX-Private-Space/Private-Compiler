@@ -1,5 +1,5 @@
 
-name: FusionX-Lab-Runner
+name: FusionX-Private-Compiler
  
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
     inputs:
       KERNEL_TREE:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenX-Private-Space/fusionX_space_ximi_sm8250.git'
+        default: 'https://github.com/SenX-Private-Space/fusionX_private.git'
         required: true
       VERSION:
         description: 'Zip Version'
@@ -25,8 +25,8 @@ on:
         description: 'Custom Kernel Version'
         default: '-FusionX'
         required: false
-      USE_LTO_THIN:
-        description: 'Use LTO Thin instead of LTO Full'
+      USE_LTO_FULL:
+        description: 'Use LTO Full instead of LTO Thin'
         required: false
         type: boolean
         default: false
@@ -85,8 +85,8 @@ jobs:
       - name: Checkout Kernel
         uses: actions/checkout@v4
         with:
-          repository: SenX-Private-Space/fusionX_space_ximi_sm8250.git
-          ref: base
+          repository: SenX-Private-Space/fusionX_private
+          ref: wip-next
           path: kernel_tree
           fetch-depth: 1
 
@@ -97,18 +97,18 @@ jobs:
             sed -i -e 's/CONFIG_LOCALVERSION="-FusionX"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
           fi
           
-      - name: Change LTO Configuration to THIN
-        if: ${{ github.event.inputs.USE_LTO_THIN == 'true' }}
+      - name: Change LTO Configuration to FULL
+        if: ${{ github.event.inputs.USE_LTO_FULL == 'true' }}
         run: |
           cd kernel_tree
-          echo "Changing LTO configuration from FULL to THIN..."
+          echo "Changing LTO configuration from THIN to FULL..."
           sed -i -e'
           /CONFIG_ARCH_SUPPORTS_LTO_CLANG=y/c\CONFIG_ARCH_SUPPORTS_LTO_CLANG=y
-          /# CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN is not set/c\CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y
+          /CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y/c\# CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN is not set
           /CONFIG_HAS_LTO_CLANG=y/c\CONFIG_HAS_LTO_CLANG=y
           /# CONFIG_LTO_NONE is not set/c\# CONFIG_LTO_NONE is not set
-          /CONFIG_LTO_CLANG_FULL=y/c\# CONFIG_LTO_CLANG_FULL is not set
-          /CONFIG_LTO_CLANG_THIN=n/c\CONFIG_LTO_CLANG_THIN=y
+          /# CONFIG_LTO_CLANG_FULL is not set/c\CONFIG_LTO_CLANG_FULL=y
+          /CONFIG_LTO_CLANG_THIN=y/c\# CONFIG_LTO_CLANG_THIN is not set
           ' arch/arm64/configs/vendor/munch_defconfig
           
       - name: Apply Patches
@@ -232,10 +232,10 @@ jobs:
           echo "${{ steps.build_start.outputs.start_date }}" > /tmp/build-metrics/start-date
           echo "${{ steps.build_end.outputs.build_duration }}" > /tmp/build-metrics/duration
           
-          if [[ "${{ github.event.inputs.USE_LTO_THIN }}" == "true" ]]; then
-            echo "LTO: THIN" > /tmp/build-metrics/lto-config
-          else
+          if [[ "${{ github.event.inputs.USE_LTO_FULL }}" == "true" ]]; then
             echo "LTO: FULL" > /tmp/build-metrics/lto-config
+          else
+            echo "LTO: THIN" > /tmp/build-metrics/lto-config
           fi
           # Save Clang toolchain information
           echo "CLANG: ${{ github.event.inputs.CLANG_TOOLCHAIN }}" >> /tmp/build-metrics/lto-config
@@ -355,25 +355,20 @@ jobs:
           cat > send_telegram.py << 'EOF'
           import os
           import requests
-          
+      
           def send_telegram_message(bot_token, chat_id, message, file_path):
               url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
-              
-              message_html = message
-              
               files = {
                   'document': open(file_path, 'rb')
               }
-              
               data = {
                   'chat_id': chat_id,
-                  'caption': message_html,
+                  'caption': message,
                   'parse_mode': 'HTML'
               }
-              
               response = requests.post(url, data=data, files=files)
               return response.json()
-          
+      
           # Get environment variables
           bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
           chat_id = os.environ.get('TELEGRAM_CHAT_ID')
@@ -384,29 +379,34 @@ jobs:
           clang_toolchain = os.environ.get('CLANG_TOOLCHAIN')
           build_type = os.environ.get('BUILD_TYPE')
           zip_name = os.environ.get('ZIP_NAME')
-          
-          message = f"""<b>✅ {kernel_name} Build Complete!</b> 
-          <b>🔲 Yml:</b> FusionX-Build
-          <b>📅 Date:</b> {start_date}
-          <b>🕔 Build Duration:</b> {build_time}
-          <b>📱 Device Codename:</b> munch
-          <b>📑 Branch:</b> base
-          <b>🔧 Lto:</b> {lto_config}
-          <b>⚙️ Toolchain:</b> {clang_toolchain}
-          <b>📂 Build Type:</b> {build_type}"""
-          
+      
+          # Compose the message
+          message = f"""<pre>
+          ==============================
+          <b> {kernel_name} Build Complete! </b>
+          ==============================
+          <b> Date:</b>        {start_date}
+          <b> Duration:</b>    {build_time}
+          <b> Codename:</b>    munch
+          <b> Branch:</b>      WIP-PRIVATE
+          <b> Lto:</b>         {lto_config}
+          <b> Clang:</b>       {clang_toolchain}
+          <b> Build Type:</b>  {build_type}
+          ==============================
+          </pre>"""
+      
           # Send the message with file
           result = send_telegram_message(bot_token, chat_id, message, f"{zip_name}.zip")
           print(result)
-          
-          # Check if message was sent successfully
+      
           if not result.get('ok'):
               print(f"Error sending Telegram message: {result}")
               exit(1)
           EOF
-          
-          python send_telegram.py
       
+          python3 send_telegram.py
+
+            
       - name: Upload Flashable Kernel Zip
         uses: actions/upload-artifact@v4
         with:
