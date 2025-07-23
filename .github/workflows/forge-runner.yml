@@ -7,7 +7,7 @@ on:
     inputs:
       KERNEL_TREE:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenX-Private-Space/fusionX_private.git'
+        default: 'https://github.com/SenX-Private-Space/fusionX_sm8250_private.git'
         required: true
       VERSION:
         description: 'Zip Version'
@@ -85,7 +85,7 @@ jobs:
       - name: Checkout Kernel
         uses: actions/checkout@v4
         with:
-          repository: SenX-Private-Space/fusionX_private
+          repository: SenX-Private-Space/fusionX_sm8250_private
           ref: wip-next
           path: kernel_tree
           fetch-depth: 1
