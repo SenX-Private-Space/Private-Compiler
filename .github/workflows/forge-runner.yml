@@ -86,7 +86,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: SenX-Private-Space/FX-PRIVATE
-          ref: bypass2
+          ref: bypass
           path: kernel_tree
           fetch-depth: 1
 
