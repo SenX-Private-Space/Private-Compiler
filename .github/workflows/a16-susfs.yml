@@ -1,6 +1,5 @@
 
-name: FusionX-Private-Compiler
- 
+name: HOS A16-SUSFS
 on:
   pull_request:
   workflow_dispatch:
