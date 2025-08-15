@@ -6,7 +6,7 @@ on:
     inputs:
       KERNEL_TREE:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenX-Private-Space/FX-PRIVATE'
+        default: 'https://github.com/S-XIX2/kernel_xiaomi_sm8250.git'
         required: true
       VERSION:
         description: 'Zip Version'
@@ -84,8 +84,8 @@ jobs:
       - name: Checkout Kernel
         uses: actions/checkout@v4
         with:
-          repository: SenX-Private-Space/FX-PRIVATE
-          ref: hos-a16
+          repository: S-XIX2/kernel_xiaomi_sm8250
+          ref: n-1
           path: kernel_tree
           fetch-depth: 1
 
