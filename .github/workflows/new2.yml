@@ -175,7 +175,7 @@ jobs:
           if [[ "${{ matrix.kernel }}" == 1 ]]; then
             mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
             mv out/arch/arm64/boot/dtb.img ../munch-normal-dtb
-            cp out/arch/arm64/boot/Image.gz ../Image.gz
+            cp out/arch/arm64/boot/Image.gz ../Image
           elif [[ "${{ matrix.kernel }}" == 2 ]]; then
             mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
             mv out/arch/arm64/boot/dtb.img ../munch-effcpu-dtb
@@ -196,7 +196,7 @@ jobs:
           path: |
             *.img
             *-dtb
-            Image.gz
+            Image
 
   package_anykernel:
     needs: build
