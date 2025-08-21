@@ -224,7 +224,7 @@ jobs:
            echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
            echo "start_date=$(TZ=Asia/Manila date +'%b %d, %Y %I:%M %p')" >> $GITHUB_OUTPUT
        
-- name: Build Kernel
+       - name: Build Kernel
          run: |
            if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang" ]]; then
              export PATH="$(pwd)/clang-aosp/bin:$PATH"
@@ -522,7 +522,7 @@ jobs:
            echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
            echo "start_date=$(TZ=Asia/Manila date +'%b %d, %Y %I:%M %p')" >> $GITHUB_OUTPUT
        
-- name: Build Kernel
+       - name: Build Kernel
          run: |
            if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang" ]]; then
              export PATH="$(pwd)/clang-aosp/bin:$PATH"
