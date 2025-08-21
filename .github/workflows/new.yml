@@ -239,21 +239,17 @@ jobs:
            make O=out vendor/munch_defconfig
            make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
            
-           # Check what files were actually generated
            echo "Generated files:"
            ls -la out/arch/arm64/boot/
            
+           # --- Logic for specific dtb/dtbo files ---
            if [[ "${{ matrix.type }}" == "original" ]]; then
-             # Check if dtbo.img exists before moving
              if [[ -f out/arch/arm64/boot/dtbo.img ]]; then
                mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
              fi
-             # Check if dtb exists before moving  
              if [[ -f out/arch/arm64/boot/dtb ]]; then
                mv out/arch/arm64/boot/dtb ../munch-normal-dtb
              fi
-             # Always copy Image
-             cp out/arch/arm64/boot/Image ../Image
            elif [[ "${{ matrix.type }}" == "swift" ]]; then
              if [[ -f out/arch/arm64/boot/dtb ]]; then
                mv out/arch/arm64/boot/dtb ../munch-slightuc-dtb
@@ -277,6 +273,13 @@ jobs:
              if [[ -f out/arch/arm64/boot/dtb ]]; then
                mv out/arch/arm64/boot/dtb ../munch-effcpu-gpustk-dtb
              fi
+           fi
+ 
+           if [[ -f out/arch/arm64/boot/Image ]]; then
+             cp out/arch/arm64/boot/Image ../Image
+           else
+             echo "::error:: Kernel Image was not generated! The build has failed."
+             exit 1
            fi
 
        - name: Verify build artifacts
@@ -531,21 +534,17 @@ jobs:
            make O=out vendor/munch_defconfig
            make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
            
-           # Check what files were actually generated
            echo "Generated files:"
            ls -la out/arch/arm64/boot/
            
+           # --- Logic for specific dtb/dtbo files ---
            if [[ "${{ matrix.type }}" == "original" ]]; then
-             # Check if dtbo.img exists before moving
              if [[ -f out/arch/arm64/boot/dtbo.img ]]; then
                mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
              fi
-             # Check if dtb exists before moving  
              if [[ -f out/arch/arm64/boot/dtb ]]; then
                mv out/arch/arm64/boot/dtb ../munch-normal-dtb
              fi
-             # Always copy Image
-             cp out/arch/arm64/boot/Image ../Image
            elif [[ "${{ matrix.type }}" == "swift" ]]; then
              if [[ -f out/arch/arm64/boot/dtb ]]; then
                mv out/arch/arm64/boot/dtb ../munch-slightuc-dtb
@@ -569,6 +568,13 @@ jobs:
              if [[ -f out/arch/arm64/boot/dtb ]]; then
                mv out/arch/arm64/boot/dtb ../munch-effcpu-gpustk-dtb
              fi
+           fi
+ 
+           if [[ -f out/arch/arm64/boot/Image ]]; then
+             cp out/arch/arm64/boot/Image ../Image
+           else
+             echo "::error:: Kernel Image was not generated! The build has failed."
+             exit 1
            fi
 
        - name: Verify build artifacts
