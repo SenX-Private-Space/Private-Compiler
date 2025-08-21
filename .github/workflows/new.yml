@@ -200,9 +200,9 @@ jobs:
           make O=out vendor/munch_defconfig
           make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
           if [[ "${{ matrix.kernel }}" == 1 ]]; then
+            cp out/arch/arm64/boot/Image ../Image
             mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
             mv out/arch/arm64/boot/dtb.img ../munch-normal-dtb
-            cp out/arch/arm64/boot/Image.gz ../Image
           elif [[ "${{ matrix.kernel }}" == 2 ]]; then
             mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
             mv out/arch/arm64/boot/dtb.img ../munch-effcpu-dtb
@@ -216,14 +216,64 @@ jobs:
             mv out/arch/arm64/boot/dtb.img ../munch-slightuc-gpustk-dtb
           fi
 
-      - name: Upload Kernel Artifacts
+      # Upload Image separately (shared across all kernels for each branch)
+      - name: Upload Kernel Base Image
         uses: actions/upload-artifact@v4
+        if: matrix.kernel == 1
         with:
-          name: kernel-${{ matrix.branch }}-${{ matrix.kernel }}
+          name: kernel-${{ matrix.branch }}-base
+          path: Image
+
+      # Upload kernel-specific artifacts
+      - name: Upload Kernel Artifacts - Kernel 1
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 1
+        with:
+          name: kernel-part-${{ matrix.branch }}-1-addon
           path: |
-            *.img
-            *-dtb
-            Image
+            munch-aosp-dtbo.img
+            munch-normal-dtb
+
+      - name: Upload Kernel Artifacts - Kernel 2
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 2
+        with:
+          name: kernel-part-${{ matrix.branch }}-2-addon
+          path: |
+            munch-miui-dtbo.img
+            munch-effcpu-dtb
+
+      - name: Upload Kernel Artifacts - Kernel 3
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 3
+        with:
+          name: kernel-part-${{ matrix.branch }}-3-addon
+          path: |
+            munch-normal-gpustk-dtb
+
+      - name: Upload Kernel Artifacts - Kernel 4
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 4
+        with:
+          name: kernel-part-${{ matrix.branch }}-4-addon
+          path: |
+            munch-effcpu-gpustk-dtb
+
+      - name: Upload Kernel Artifacts - Kernel 5
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 5
+        with:
+          name: kernel-part-${{ matrix.branch }}-5-addon
+          path: |
+            munch-slightuc-dtb
+
+      - name: Upload Kernel Artifacts - Kernel 6
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 6
+        with:
+          name: kernel-part-${{ matrix.branch }}-6-addon
+          path: |
+            munch-slightuc-gpustk-dtb
 
   package_anykernel:
     needs: build
@@ -233,53 +283,60 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download Kernel Build Original
+      - name: Download Kernel Base Image
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-1
-          path: kernel-${{ matrix.branch }}-1
+          name: kernel-${{ matrix.branch }}-base
+          path: kernel-${{ matrix.branch }}-base
 
-      - name: Download Kernel Build Modified
+      - name: Download Kernel Build Addon 1
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-2
-          path: kernel-${{ matrix.branch }}-2
+          name: kernel-part-${{ matrix.branch }}-1-addon
+          path: kernel-part-${{ matrix.branch }}-1-addon
 
-      - name: Download Kernel Build Stock + Stock GPU
+      - name: Download Kernel Build Addon 2
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-3
-          path: kernel-${{ matrix.branch }}-3
+          name: kernel-part-${{ matrix.branch }}-2-addon
+          path: kernel-part-${{ matrix.branch }}-2-addon
 
-      - name: Download Kernel Build Effcpu + Stock GPU
+      - name: Download Kernel Build Addon 3
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-4
-          path: kernel-${{ matrix.branch }}-4
+          name: kernel-part-${{ matrix.branch }}-3-addon
+          path: kernel-part-${{ matrix.branch }}-3-addon
 
-      - name: Download Kernel Build Slight UC
+      - name: Download Kernel Build Addon 4
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-5
-          path: kernel-${{ matrix.branch }}-5
+          name: kernel-part-${{ matrix.branch }}-4-addon
+          path: kernel-part-${{ matrix.branch }}-4-addon
 
-      - name: Download Kernel Build Slight UC + Stock GPU
+      - name: Download Kernel Build Addon 5
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-6
-          path: kernel-${{ matrix.branch }}-6
+          name: kernel-part-${{ matrix.branch }}-5-addon
+          path: kernel-part-${{ matrix.branch }}-5-addon
+
+      - name: Download Kernel Build Addon 6
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-part-${{ matrix.branch }}-6-addon
+          path: kernel-part-${{ matrix.branch }}-6-addon
 
       - name: Clone AnyKernel3
         run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b fusionX AnyKernel3-${{ matrix.branch }}
 
       - name: Move Kernel Files to AnyKernel3
         run: |
-          mv kernel-${{ matrix.branch }}-1/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-${{ matrix.branch }}-2/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-${{ matrix.branch }}-3/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-${{ matrix.branch }}-4/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-${{ matrix.branch }}-5/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-${{ matrix.branch }}-6/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-${{ matrix.branch }}-base/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-1-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-2-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-3-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-4-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-5-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-6-addon/* AnyKernel3-${{ matrix.branch }}/
 
       - name: Define ZIP Name
         run: |
