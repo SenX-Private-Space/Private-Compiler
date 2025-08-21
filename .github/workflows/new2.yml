@@ -1,4 +1,5 @@
-name: FD-tester-munch-builder
+
+name: FusionX-Final_NEW
 
 on:
   pull_request:
@@ -15,10 +16,10 @@ on:
         description: 'Kernel Tree Branch 1'
         default: 'fx-base'
         required: true
-      CODENAME:
-        description: 'Phone Codename'
-        default: 'munch'
-        required: true
+      VERSION:
+        description: 'Zip Version'
+        default: '2.x'
+        required: false
       ANYKERNEL_URL:
         description: 'AnyKernel Url (leave blank if you dont want AnyKernel)'
         default: 'https://github.com/SenseiiX/AnyKernel3'
@@ -27,10 +28,19 @@ on:
         description: 'Custom Kernel Version'
         default: '-FusionX'
         required: false
-      COMPILER:
-        description: 'default=neutron, write aosp for aosp 20 clang'
-        default: 'neutron'
+      CLANG_TOOLCHAIN:
+        description: 'Clang toolchain selection'
+        default: 'aosp'
+        required: true
+        type: choice
+        options:
+        - neutron
+        - aosp clang
+      USE_LTO_THIN:
+        description: 'Use LTO THIN instead of FULL'
+        default: 'false'
         required: false
+        type: boolean
 
 jobs:
   build:
@@ -45,17 +55,39 @@ jobs:
       - name: Install Dependencies
         run: sudo apt install flex libncurses6
 
-      - name: Download & Extract Clang
+      - name: Cache Clang Toolchain
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: |
+            clang-neutron
+            clang-aosp
+          key: clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ hashFiles('**/clang-version') }}
+          restore-keys: |
+            clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-
+
+      - name: Download & Extract Clang (If not cached)
+        if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          if [[ "${{ github.event.inputs.COMPILER }}" == "aosp" ]]; then
+          if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang" ]]; then
             wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
-            mkdir clang
-            tar -xf clang.tar.gz -C clang
+            mkdir -p clang-aosp
+            tar -xf clang.tar.gz -C clang-aosp
+            echo "aosp-r547379" > clang-version
           else
             wget https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst -O clang.tar.zst
-            mkdir clang
+            mkdir -p clang-neutron
             unzstd -d clang.tar.zst
-            tar -xf clang.tar -C clang
+            tar -xf clang.tar -C clang-neutron
+            echo "neutron-10032024" > clang-version
+          fi
+
+      - name: Set Clang Path
+        run: |
+          if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang" ]]; then
+            echo "CLANG_PATH=$(pwd)/clang-aosp/bin" >> $GITHUB_ENV
+          else
+            echo "CLANG_PATH=$(pwd)/clang-neutron/bin" >> $GITHUB_ENV
           fi
 
       - name: Set Kernel Environment Variables
@@ -73,6 +105,19 @@ jobs:
           if [[ "${{ github.event.inputs.CUSTOM_SED }}" != "-FusionX" ]]; then
             sed -i -e 's/CONFIG_LOCALVERSION="-FusionX"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
           fi
+
+      - name: Change LTO Configuration to THIN
+        if: ${{ github.event.inputs.USE_LTO_THIN == 'true' }}
+        run: |
+          cd kernel_tree
+          echo "Changing LTO configuration from FULL to THIN..."
+          sed -i -e '
+          /CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y/c\CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y
+          /CONFIG_HAS_LTO_CLANG=y/c\CONFIG_HAS_LTO_CLANG=y
+          /# CONFIG_LTO_NONE is not set/c\# CONFIG_LTO_NONE is not set
+          /CONFIG_LTO_CLANG_FULL=y/c\# CONFIG_LTO_CLANG_FULL is not set
+          /# CONFIG_LTO_CLANG_THIN is not set/c\CONFIG_LTO_CLANG_THIN=y
+          ' arch/arm64/configs/vendor/munch_defconfig
 
       - name: Remove cycle count
         run: |
@@ -118,7 +163,7 @@ jobs:
 
       - name: Build Kernel
         run: |
-          export PATH="$(pwd)/clang/bin:$PATH"
+          export PATH="${{ env.CLANG_PATH }}:$PATH"
           export ARCH=arm64
           export SUBARCH=ARM64
           export KBUILD_BUILD_USER="senx"
@@ -209,7 +254,7 @@ jobs:
       - name: Define ZIP Name
         run: |
           COMPILED_DATE=$(date +%Y%m%d)
-          echo "ZIP_NAME=[FD-][TEST-${{ github.event.inputs.CODENAME }}-$COMPILED_DATE]" >> $GITHUB_ENV
+          echo "ZIP_NAME=[FusionX-NEXT]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE]" >> $GITHUB_ENV
 
       - name: Upload Flashable Kernel Zip
         uses: actions/upload-artifact@v4
