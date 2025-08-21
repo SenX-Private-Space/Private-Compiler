@@ -6,7 +6,7 @@ on:
      inputs:
        KERNEL_TREE_1:
          description: 'Kernel Tree'
-         default: 'https://github.com/SenX-Private-Space/fusionX-testing.git'
+         default: 'https://github.com/SenX-Private-Space/fx-tst.git'
          required: true
        KERNEL_TREE_BRANCH_1:
          description: 'Kernel Tree Branch (SUSFS)'
@@ -31,7 +31,7 @@ on:
          default: '1.x'
          required: false
        ANYKERNEL_URL:
-         description: 'AnyKernel Url (leave blank if you dont want AnyKernel)'
+         description: 'AnyKernel Tree'
          default: 'https://github.com/SenseiiX/AnyKernel3'
          required: false
        ANYKERNEL_BRANCH:
