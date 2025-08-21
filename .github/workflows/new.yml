@@ -171,7 +171,8 @@ jobs:
           cd kernel_tree
           patch -p1 -f < "0001-stock-gpu-freq.patch"
 
-      - name: Apply Patches
+      - name: Apply Patches (SUSFS and NEXT only)
+        if: matrix.branch == 1 || matrix.branch == 2
         run: |
           cd kernel_tree
           bash nextpatch.sh
@@ -431,7 +432,7 @@ jobs:
 
           # Send build completion message
           completion_message = f"""
-           <b>FusionX Kernel Build Complete!</b>
+           ✅ <b>FusionX Kernel Build Complete!</b>
 
            <b>Generated Files:</b> {len(zip_files)}
            <b>Clang:</b> {clang_toolchain}
