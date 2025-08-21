@@ -29,12 +29,12 @@ on:
           - wip-next
       KERNEL_TREE_BRANCH_3:
         description: 'Kernel Tree Branch (NOKSU)'
-        default: 'wip-next'
+        default: 'fx-base'
         required: false
         type: choice
         options:
-          - wip-next
-          - stable-next
+          - fx-base
+          - stable-noksu
       VERSION:
         description: 'Zip Version'
         default: '2.x'
@@ -170,13 +170,6 @@ jobs:
         run: |
           cd kernel_tree
           patch -p1 -f < "0001-stock-gpu-freq.patch"
-
-      - name: Disable KSU for NOKSU build
-        if: matrix.branch == 3
-        run: |
-          cd kernel_tree
-          echo "Disabling KSU for NOKSU build..."
-          sed -i -e '/CONFIG_KSU=y/c\# CONFIG_KSU is not set' arch/arm64/configs/vendor/munch_defconfig
 
       - name: Apply Patches (SUSFS and NEXT only)
         if: matrix.branch != 3
