@@ -172,7 +172,7 @@ jobs:
           patch -p1 -f < "0001-stock-gpu-freq.patch"
 
       - name: Apply Patches (SUSFS and NEXT only)
-        if: matrix.branch == 1 || matrix.branch == 2
+        if: matrix.branch != 3
         run: |
           cd kernel_tree
           bash nextpatch.sh
