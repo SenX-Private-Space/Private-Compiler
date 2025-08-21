@@ -11,7 +11,7 @@ on:
         description: 'Kernel Tree'
         default: 'https://github.com/SenX-Private-Space/fx-tst'
         required: true
-      KERNEL_TREE_BRANCH_SUSFS:
+      KERNEL_TREE_BRANCH_1:
         description: 'Kernel Tree Branch (SUSFS)'
         default: 'wip-susfs'
         required: false
@@ -19,7 +19,7 @@ on:
         options:
           - stable-susfs
           - wip-susfs
-      KERNEL_TREE_BRANCH_NEXT:
+      KERNEL_TREE_BRANCH_2:
         description: 'Kernel Tree Branch (NEXT)'
         default: 'wip-next'
         required: false
@@ -27,14 +27,14 @@ on:
         options:
           - stable-next
           - wip-next
-      KERNEL_TREE_BRANCH_NOKSU:
-        description: 'Kernel Tree Branch (NOKSU) - uses NEXT branch'
+      KERNEL_TREE_BRANCH_3:
+        description: 'Kernel Tree Branch (NOKSU)'
         default: 'wip-next'
         required: false
         type: choice
         options:
-          - stable-next
           - wip-next
+          - stable-next
       VERSION:
         description: 'Zip Version'
         default: '2.x'
@@ -66,28 +66,12 @@ jobs:
     strategy:
       matrix:
         kernel: [1, 2, 3, 4, 5, 6]
-        variant: [SUSFS, NEXT, NOKSU]
-      fail-fast: false
+        branch: [1, 2, 3]  # 1=SUSFS, 2=NEXT, 3=NOKSU
     runs-on: ubuntu-latest
     env:
       UPLOAD_TO_RELEASE: false
-      KERNEL_VARIANT: ${{ matrix.variant }}
 
     steps:
-      - name: Get current date and time
-        id: datetime
-        run: |
-          echo "TIMESTAMP=$(TZ='Asia/Jakarta' date +'%Y%m%d-%H%M')" >> $GITHUB_ENV
-          echo "HUMAN_DATE=$(TZ='Asia/Jakarta' date '+%Y-%m-%d %H:%M')" >> $GITHUB_ENV
-
-      - name: Display Build Info
-        run: |
-          echo "::group::Build Information"
-          echo "Kernel Variant: ${{ matrix.variant }}"
-          echo "Kernel Build: ${{ matrix.kernel }}"
-          echo "Timestamp: $TIMESTAMP"
-          echo "::endgroup::"
-
       - name: Install Dependencies
         run: sudo apt install flex libncurses6
 
@@ -129,38 +113,24 @@ jobs:
       - name: Set Kernel Environment Variables
         run: |
           echo "KERNEL_TREE=${{ github.event.inputs.KERNEL_TREE_1 }}" >> $GITHUB_ENV
-          case "${{ matrix.variant }}" in
-            SUSFS) 
-              echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_SUSFS }}" >> $GITHUB_ENV
-              echo "BRANCH_NAME=SUSFS" >> $GITHUB_ENV 
-              ;;
-            NEXT) 
-              echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_NEXT }}" >> $GITHUB_ENV
-              echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV 
-              ;;
-            NOKSU) 
-              echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_NOKSU }}" >> $GITHUB_ENV
-              echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV 
-              ;;
+          case "${{ matrix.branch }}" in
+            1) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}" >> $GITHUB_ENV
+               echo "BRANCH_NAME=SUSFS" >> $GITHUB_ENV ;;
+            2) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}" >> $GITHUB_ENV
+               echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV ;;
+            3) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}" >> $GITHUB_ENV
+               echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV ;;
           esac
 
-      - name: Clone Kernel Source (per-variant branch)
+      - name: Checkout Kernel
         run: |
           git clone --depth=1 --branch "${{ env.KERNEL_TREE_BRANCH }}" "${{ env.KERNEL_TREE }}" kernel_tree
 
-      - name: Kernel Version Configuration
+      - name: Kernel Version
         run: |
           cd kernel_tree
           if [[ "${{ github.event.inputs.CUSTOM_SED }}" != "-FusionX" ]]; then
-            # Check if the defconfig file exists
-            if [ -f "arch/arm64/configs/vendor/munch_defconfig" ]; then
-              sed -i -e 's/CONFIG_LOCALVERSION="-FusionX"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
-            elif [ -f "arch/arm64/configs/munch_defconfig" ]; then
-              sed -i -e 's/CONFIG_LOCALVERSION="-FusionX"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/munch_defconfig
-            else
-              echo "Warning: Could not find defconfig file"
-              find arch/arm64/configs -name "*munch*" -o -name "*defconfig" | head -5
-            fi
+            sed -i -e 's/CONFIG_LOCALVERSION="-FusionX"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
           fi
 
       - name: Change LTO Configuration to THIN
@@ -168,87 +138,63 @@ jobs:
         run: |
           cd kernel_tree
           echo "Changing LTO configuration from FULL to THIN..."
-          DEFCONFIG_FILE=""
-          if [ -f "arch/arm64/configs/vendor/munch_defconfig" ]; then
-            DEFCONFIG_FILE="arch/arm64/configs/vendor/munch_defconfig"
-          elif [ -f "arch/arm64/configs/munch_defconfig" ]; then
-            DEFCONFIG_FILE="arch/arm64/configs/munch_defconfig"
-          fi
-          
-          if [ -n "$DEFCONFIG_FILE" ]; then
-            sed -i -e '
-            /CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y/c\CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y
-            /CONFIG_HAS_LTO_CLANG=y/c\CONFIG_HAS_LTO_CLANG=y
-            /# CONFIG_LTO_NONE is not set/c\# CONFIG_LTO_NONE is not set
-            /CONFIG_LTO_CLANG_FULL=y/c\# CONFIG_LTO_CLANG_FULL is not set
-            /# CONFIG_LTO_CLANG_THIN is not set/c\CONFIG_LTO_CLANG_THIN=y
-            ' "$DEFCONFIG_FILE"
-          fi
+          sed -i -e '
+          /CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y/c\CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y
+          /CONFIG_HAS_LTO_CLANG=y/c\CONFIG_HAS_LTO_CLANG=y
+          /# CONFIG_LTO_NONE is not set/c\# CONFIG_LTO_NONE is not set
+          /CONFIG_LTO_CLANG_FULL=y/c\# CONFIG_LTO_CLANG_FULL is not set
+          /# CONFIG_LTO_CLANG_THIN is not set/c\CONFIG_LTO_CLANG_THIN=y
+          ' arch/arm64/configs/vendor/munch_defconfig
 
       - name: Remove cycle count
         run: |
           cd kernel_tree
-          if [ -f "drivers/power/supply/qcom/qpnp-fg-gen4.c" ]; then
-            sed -i '/case POWER_SUPPLY_PROP_CYCLE_COUNT:/,/break;/c\
-            \tcase POWER_SUPPLY_PROP_CYCLE_COUNT:\
-            \t#ifdef CONFIG_BATT_VERIFY_BY_DS28E16\
-            \t\tpval->intval = fg->maxim_cycle_count;\
-            \t#else\
-            \t\trc = get_cycle_count(chip->counter, &pval->intval);\
-            \t#endif\
-            \t\tbreak;' drivers/power/supply/qcom/qpnp-fg-gen4.c
-          fi
+          sed -i '/case POWER_SUPPLY_PROP_CYCLE_COUNT:/,/break;/c\
+          \tcase POWER_SUPPLY_PROP_CYCLE_COUNT:\
+          \t#ifdef CONFIG_BATT_VERIFY_BY_DS28E16\
+          \t\tpval->intval = fg->maxim_cycle_count;\
+          \t#else\
+          \t\trc = get_cycle_count(chip->counter, &pval->intval);\
+          \t#endif\
+          \t\tbreak;' drivers/power/supply/qcom/qpnp-fg-gen4.c
 
       - name: Apply Modifications (if swift build)
         if: matrix.kernel == 5 || matrix.kernel == 6
         run: |
           cd kernel_tree
-          if [ -f "arch/arm64/boot/dts/vendor/qcom/kona.dtsi" ]; then
-            sed -i -e '/<2841600>,/c\<2841600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-            sed -i -e '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-          fi
+          sed -i -e '/<2841600>,/c\<2841600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
 
       - name: Revert to stock gpufreq
         if: matrix.kernel == 3 || matrix.kernel == 4 || matrix.kernel == 6
         run: |
           cd kernel_tree
-          if [ -f "0001-stock-gpu-freq.patch" ]; then
-            patch -p1 -f < "0001-stock-gpu-freq.patch" || echo "Patch not applicable"
-          fi
+          patch -p1 -f < "0001-stock-gpu-freq.patch"
 
-      - name: Apply KSU/SUSFS Patches (SUSFS and NEXT only)
-        if: matrix.variant != 'NOKSU'
+      - name: Disable KSU for NOKSU build
+        if: matrix.branch == 3
         run: |
           cd kernel_tree
-          echo "Applying patches for ${{ matrix.variant }} variant"
-          if [ -f "nextpatch.sh" ]; then
-            bash nextpatch.sh
-          else
-            echo "nextpatch.sh not found, skipping patches"
-          fi
-          
-      - name: Skip KSU Patches for NOKSU
-        if: matrix.variant == 'NOKSU'
+          echo "Disabling KSU for NOKSU build..."
+          sed -i -e '/CONFIG_KSU=y/c\# CONFIG_KSU is not set' arch/arm64/configs/vendor/munch_defconfig
+
+      - name: Apply Patches (SUSFS and NEXT only)
+        if: matrix.branch != 3
         run: |
           cd kernel_tree
-          echo "NOKSU variant: Building kernel WITHOUT KernelSU patches"
-          echo "Using NEXT branch source but no KSU modifications applied"
+          bash nextpatch.sh
 
       - name: Apply Modifications (if modified build)
         if: matrix.kernel == 2 || matrix.kernel == 4
         run: |
           cd kernel_tree
-          if [ -f "arch/arm64/boot/dts/vendor/qcom/kona.dtsi" ]; then
-            sed -i -e '/<2553600>,/c\<2553600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-            sed -i -e '/<2649600>,/c\//<2649600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-            sed -i -e '/<2745600>,/c\//<2745600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-            sed -i -e '/<2841600>,/c\//<2841600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-            sed -i -e '/<3187200>;/c\//<3187200>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-          fi
-          if [ -f "arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi" ]; then
-            sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
-            sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
-          fi
+          sed -i -e '/<2553600>,/c\<2553600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e '/<2649600>,/c\//<2649600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e '/<2745600>,/c\//<2745600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e '/<2841600>,/c\//<2841600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e '/<3187200>;/c\//<3187200>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
+          sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
 
       - name: Build Kernel
         run: |
@@ -256,216 +202,169 @@ jobs:
           export ARCH=arm64
           export SUBARCH=ARM64
           export KBUILD_BUILD_USER="senx"
-          export KBUILD_BUILD_HOST="github"
+          export KBUILD_BUILD_HOST="ubuntu"
           export KBUILD_BUILD_TIMESTAMP="$(TZ=UTC-7 date)"
           cd kernel_tree
-          
-          # Find the correct defconfig
-          DEFCONFIG=""
-          if [ -f "arch/arm64/configs/vendor/munch_defconfig" ]; then
-            DEFCONFIG="vendor/munch_defconfig"
-          elif [ -f "arch/arm64/configs/munch_defconfig" ]; then
-            DEFCONFIG="munch_defconfig"
-          else
-            echo "Error: Could not find munch defconfig"
-            echo "Available defconfigs:"
-            find arch/arm64/configs -name "*defconfig" | head -10
-            exit 1
-          fi
-          
-          echo "Using defconfig: $DEFCONFIG"
-          make O=out "$DEFCONFIG"
+          make O=out vendor/munch_defconfig
           make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
-          
-          # Copy files based on kernel and variant
           if [[ "${{ matrix.kernel }}" == 1 ]]; then
-            cp out/arch/arm64/boot/Image ../Image-${{ matrix.variant }}
-            if [ -f "out/arch/arm64/boot/dtbo.img" ]; then
-              mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo-${{ matrix.variant }}.img
-            fi
-            if [ -f "out/arch/arm64/boot/dtb.img" ]; then
-              mv out/arch/arm64/boot/dtb.img ../munch-normal-dtb-${{ matrix.variant }}
-            fi
+            cp out/arch/arm64/boot/Image ../Image
+            mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
+            mv out/arch/arm64/boot/dtb.img ../munch-normal-dtb
           elif [[ "${{ matrix.kernel }}" == 2 ]]; then
-            if [ -f "out/arch/arm64/boot/dtbo.img" ]; then
-              mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo-${{ matrix.variant }}.img
-            fi
-            if [ -f "out/arch/arm64/boot/dtb.img" ]; then
-              mv out/arch/arm64/boot/dtb.img ../munch-effcpu-dtb-${{ matrix.variant }}
-            fi
+            mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
+            mv out/arch/arm64/boot/dtb.img ../munch-effcpu-dtb
           elif [[ "${{ matrix.kernel }}" == 3 ]]; then
-            if [ -f "out/arch/arm64/boot/dtb.img" ]; then
-              mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb-${{ matrix.variant }}
-            fi
+            mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
           elif [[ "${{ matrix.kernel }}" == 4 ]]; then
-            if [ -f "out/arch/arm64/boot/dtb.img" ]; then
-              mv out/arch/arm64/boot/dtb.img ../munch-effcpu-gpustk-dtb-${{ matrix.variant }}
-            fi
+            mv out/arch/arm64/boot/dtb.img ../munch-effcpu-gpustk-dtb
           elif [[ "${{ matrix.kernel }}" == 5 ]]; then
-            if [ -f "out/arch/arm64/boot/dtb.img" ]; then
-              mv out/arch/arm64/boot/dtb.img ../munch-slightuc-dtb-${{ matrix.variant }}
-            fi
+            mv out/arch/arm64/boot/dtb.img ../munch-slightuc-dtb
           elif [[ "${{ matrix.kernel }}" == 6 ]]; then
-            if [ -f "out/arch/arm64/boot/dtb.img" ]; then
-              mv out/arch/arm64/boot/dtb.img ../munch-slightuc-gpustk-dtb-${{ matrix.variant }}
-            fi
+            mv out/arch/arm64/boot/dtb.img ../munch-slightuc-gpustk-dtb
           fi
 
-      # Upload Image separately (shared across all kernels for each variant)
+      # Upload Image separately (shared across all kernels for each branch)
       - name: Upload Kernel Base Image
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 1
         with:
-          name: kernel-${{ matrix.variant }}-base
-          path: Image-${{ matrix.variant }}
+          name: kernel-${{ matrix.branch }}-base
+          path: Image
 
       # Upload kernel-specific artifacts
       - name: Upload Kernel Artifacts - Kernel 1
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 1
         with:
-          name: kernel-part-${{ matrix.variant }}-1-addon
+          name: kernel-part-${{ matrix.branch }}-1-addon
           path: |
-            munch-*-dtbo-${{ matrix.variant }}.img
-            munch-*-dtb-${{ matrix.variant }}
+            munch-aosp-dtbo.img
+            munch-normal-dtb
 
       - name: Upload Kernel Artifacts - Kernel 2
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 2
         with:
-          name: kernel-part-${{ matrix.variant }}-2-addon
+          name: kernel-part-${{ matrix.branch }}-2-addon
           path: |
-            munch-*-dtbo-${{ matrix.variant }}.img
-            munch-*-dtb-${{ matrix.variant }}
+            munch-miui-dtbo.img
+            munch-effcpu-dtb
 
       - name: Upload Kernel Artifacts - Kernel 3
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 3
         with:
-          name: kernel-part-${{ matrix.variant }}-3-addon
+          name: kernel-part-${{ matrix.branch }}-3-addon
           path: |
-            munch-*-dtb-${{ matrix.variant }}
+            munch-normal-gpustk-dtb
 
       - name: Upload Kernel Artifacts - Kernel 4
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 4
         with:
-          name: kernel-part-${{ matrix.variant }}-4-addon
+          name: kernel-part-${{ matrix.branch }}-4-addon
           path: |
-            munch-*-dtb-${{ matrix.variant }}
+            munch-effcpu-gpustk-dtb
 
       - name: Upload Kernel Artifacts - Kernel 5
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 5
         with:
-          name: kernel-part-${{ matrix.variant }}-5-addon
+          name: kernel-part-${{ matrix.branch }}-5-addon
           path: |
-            munch-*-dtb-${{ matrix.variant }}
+            munch-slightuc-dtb
 
       - name: Upload Kernel Artifacts - Kernel 6
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 6
         with:
-          name: kernel-part-${{ matrix.variant }}-6-addon
+          name: kernel-part-${{ matrix.branch }}-6-addon
           path: |
-            munch-*-dtb-${{ matrix.variant }}
+            munch-slightuc-gpustk-dtb
 
   package_anykernel:
     needs: build
     strategy:
       matrix:
-        variant: [SUSFS, NEXT, NOKSU]
+        branch: [1, 2, 3]  # 1=SUSFS, 2=NEXT, 3=NOKSU
     runs-on: ubuntu-latest
-    if: always() && needs.build.result != 'failure'
 
     steps:
       - name: Download Kernel Base Image
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          name: kernel-${{ matrix.variant }}-base
-          path: kernel-${{ matrix.variant }}-base
-
-      - name: Download Kernel Build Addons
-        continue-on-error: true
-        run: |
-          for i in {1..6}; do
-            echo "Downloading kernel-part-${{ matrix.variant }}-${i}-addon"
-          done
+          name: kernel-${{ matrix.branch }}-base
+          path: kernel-${{ matrix.branch }}-base
 
       - name: Download Kernel Build Addon 1
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          name: kernel-part-${{ matrix.variant }}-1-addon
-          path: kernel-part-${{ matrix.variant }}-1-addon
+          name: kernel-part-${{ matrix.branch }}-1-addon
+          path: kernel-part-${{ matrix.branch }}-1-addon
 
       - name: Download Kernel Build Addon 2
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          name: kernel-part-${{ matrix.variant }}-2-addon
-          path: kernel-part-${{ matrix.variant }}-2-addon
+          name: kernel-part-${{ matrix.branch }}-2-addon
+          path: kernel-part-${{ matrix.branch }}-2-addon
 
       - name: Download Kernel Build Addon 3
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          name: kernel-part-${{ matrix.variant }}-3-addon
-          path: kernel-part-${{ matrix.variant }}-3-addon
+          name: kernel-part-${{ matrix.branch }}-3-addon
+          path: kernel-part-${{ matrix.branch }}-3-addon
 
       - name: Download Kernel Build Addon 4
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          name: kernel-part-${{ matrix.variant }}-4-addon
-          path: kernel-part-${{ matrix.variant }}-4-addon
+          name: kernel-part-${{ matrix.branch }}-4-addon
+          path: kernel-part-${{ matrix.branch }}-4-addon
 
       - name: Download Kernel Build Addon 5
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          name: kernel-part-${{ matrix.variant }}-5-addon
-          path: kernel-part-${{ matrix.variant }}-5-addon
+          name: kernel-part-${{ matrix.branch }}-5-addon
+          path: kernel-part-${{ matrix.branch }}-5-addon
 
       - name: Download Kernel Build Addon 6
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          name: kernel-part-${{ matrix.variant }}-6-addon
-          path: kernel-part-${{ matrix.variant }}-6-addon
+          name: kernel-part-${{ matrix.branch }}-6-addon
+          path: kernel-part-${{ matrix.branch }}-6-addon
 
       - name: Clone AnyKernel3
-        if: ${{ github.event.inputs.ANYKERNEL_URL != '' }}
-        run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b fusionX AnyKernel3-${{ matrix.variant }}
+        run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b fusionX AnyKernel3-${{ matrix.branch }}
 
       - name: Move Kernel Files to AnyKernel3
-        if: ${{ github.event.inputs.ANYKERNEL_URL != '' }}
         run: |
-          if [ -d "kernel-${{ matrix.variant }}-base" ]; then
-            cp -r kernel-${{ matrix.variant }}-base/* AnyKernel3-${{ matrix.variant }}/ || true
-          fi
-          for i in {1..6}; do
-            if [ -d "kernel-part-${{ matrix.variant }}-${i}-addon" ]; then
-              cp -r kernel-part-${{ matrix.variant }}-${i}-addon/* AnyKernel3-${{ matrix.variant }}/ || true
-            fi
-          done
+          mv kernel-${{ matrix.branch }}-base/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-1-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-2-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-3-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-4-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-5-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-6-addon/* AnyKernel3-${{ matrix.branch }}/
 
       - name: Define ZIP Name
         run: |
-          COMPILED_DATE=$(date +%Y%m%d-%H%M)
-          echo "ZIP_NAME=FusionX-${{ matrix.variant }}-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
-          echo "KERNEL_TYPE=${{ matrix.variant }}" >> $GITHUB_ENV
+          COMPILED_DATE=$(date +%Y%m%d)
+          case "${{ matrix.branch }}" in
+            1) echo "ZIP_NAME=FusionX-SUSFS-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
+               echo "KERNEL_TYPE=SUSFS" >> $GITHUB_ENV ;;
+            2) echo "ZIP_NAME=FusionX-NEXT-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
+               echo "KERNEL_TYPE=NEXT" >> $GITHUB_ENV ;;
+            3) echo "ZIP_NAME=FusionX-NOKSU-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
+               echo "KERNEL_TYPE=NOKSU" >> $GITHUB_ENV ;;
+          esac
 
       - name: Create ZIP file
-        if: ${{ github.event.inputs.ANYKERNEL_URL != '' }}
         run: |
-          cd AnyKernel3-${{ matrix.variant }}
+          cd AnyKernel3-${{ matrix.branch }}
           zip -r9 ../${{ env.ZIP_NAME }}.zip * -x .git* .github*
 
       - name: Upload Flashable Kernel Zip
         uses: actions/upload-artifact@v4
-        if: ${{ github.event.inputs.ANYKERNEL_URL != '' }}
         with:
           name: ${{ env.ZIP_NAME }}
           path: ${{ env.ZIP_NAME }}.zip
@@ -478,7 +377,6 @@ jobs:
     steps:
       - name: Download all ZIP artifacts
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           path: artifacts
 
@@ -488,9 +386,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CLANG_TOOLCHAIN: ${{ github.event.inputs.CLANG_TOOLCHAIN }}
           LTO_CONFIG: ${{ github.event.inputs.USE_LTO_THIN }}
-          KERNEL_TREE_BRANCH_SUSFS: ${{ github.event.inputs.KERNEL_TREE_BRANCH_SUSFS }}
-          KERNEL_TREE_BRANCH_NEXT: ${{ github.event.inputs.KERNEL_TREE_BRANCH_NEXT }}
-          KERNEL_TREE_BRANCH_NOKSU: ${{ github.event.inputs.KERNEL_TREE_BRANCH_NOKSU }}
+          KERNEL_TREE_BRANCH_1: ${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}
+          KERNEL_TREE_BRANCH_2: ${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}
+          KERNEL_TREE_BRANCH_3: ${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}
         run: |
           # Create Python script to send Telegram messages
           cat > send_telegram.py << 'EOF'
@@ -526,9 +424,9 @@ jobs:
           chat_id = os.environ.get('TELEGRAM_CHAT_ID')
           clang_toolchain = os.environ.get('CLANG_TOOLCHAIN')
           lto_config = os.environ.get('LTO_CONFIG')
-          branch_susfs = os.environ.get('KERNEL_TREE_BRANCH_SUSFS', 'N/A')
-          branch_next = os.environ.get('KERNEL_TREE_BRANCH_NEXT', 'N/A')
-          branch_noksu = os.environ.get('KERNEL_TREE_BRANCH_NOKSU', 'N/A')
+          branch_1 = os.environ.get('KERNEL_TREE_BRANCH_1', 'N/A')
+          branch_2 = os.environ.get('KERNEL_TREE_BRANCH_2', 'N/A')
+          branch_3 = os.environ.get('KERNEL_TREE_BRANCH_3', 'N/A')
 
           # Find all ZIP files
           zip_files = glob.glob('artifacts/**/*.zip', recursive=True)
@@ -541,18 +439,18 @@ jobs:
 
           # Send build completion message
           completion_message = f"""
-          ✅ <b>FusionX Kernel Build Complete!</b>
+           ✅ <b>FusionX Kernel Build Complete!</b>
 
-          <b>Generated Files:</b> {len(zip_files)}
-          <b>Clang:</b> {clang_toolchain}
-          <b>LTO:</b> {'THIN' if lto_config == 'true' else 'FULL'}
+           <b>Generated Files:</b> {len(zip_files)}
+           <b>Clang:</b> {clang_toolchain}
+           <b>LTO:</b> {'THIN' if lto_config == 'true' else 'FULL'}
           
-          <b>Build Variants:</b>
-          - SUSFS: KernelSU + SUSFS patches  
-          - NEXT: KernelSU Next patches
-          - NOKSU: Pure kernel (NO KSU)
+           <b>Branches:</b>
+          - SUSFS: {branch_1}
+          - NEXT: {branch_2}
+          - NOKSU: {branch_3}
 
-          <b>Files:</b>
+           <b>Files:</b>
           """
 
           # Send initial completion message
@@ -561,7 +459,7 @@ jobs:
           # Send each ZIP file separately
           for zip_file in zip_files:
               file_name = os.path.basename(zip_file)
-              file_message = f"📱 <b>{file_name}</b>\nReady for download!"
+              file_message = f" <b>{file_name}</b>\nReady for download!"
               
               result = send_telegram_message(bot_token, chat_id, file_message, zip_file)
               print(f"Sent {file_name}: {result}")
