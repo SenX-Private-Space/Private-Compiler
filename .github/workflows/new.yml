@@ -341,14 +341,8 @@ jobs:
          with:
            name: kernel-1-${{ matrix.type }}
            path: |
-             munch-aosp-dtbo.img
-             munch-miui-dtbo.img
-             munch-normal-dtb
-             munch-slightuc-dtb
-             munch-effcpu-dtb
-             munch-normal-gpustk-dtb
-             munch-slightuc-gpustk-dtb
-             munch-effcpu-gpustk-dtb
+             *-dtbo.img
+             *-dtb
              Image
              
        - name: Save build metrics
@@ -639,14 +633,8 @@ jobs:
          with:
            name: kernel-2-${{ matrix.type }}
            path: |
-             munch-aosp-dtbo.img
-             munch-miui-dtbo.img
-             munch-normal-dtb
-             munch-slightuc-dtb
-             munch-effcpu-dtb
-             munch-normal-gpustk-dtb
-             munch-slightuc-gpustk-dtb
-             munch-effcpu-gpustk-dtb
+             *-dtbo.img
+             *-dtb
              Image
              
        - name: Save build metrics
