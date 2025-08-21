@@ -342,16 +342,121 @@ jobs:
         run: |
           COMPILED_DATE=$(date +%Y%m%d)
           case "${{ matrix.branch }}" in
-            1) echo "ZIP_NAME=[FusionX-SUSFS]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE]" >> $GITHUB_ENV ;;
-            2) echo "ZIP_NAME=[FusionX-NEXT]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE]" >> $GITHUB_ENV ;;
-            3) echo "ZIP_NAME=[FusionX-NOKSU]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE]" >> $GITHUB_ENV ;;
+            1) echo "ZIP_NAME=FusionX-SUSFS-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
+               echo "KERNEL_TYPE=SUSFS" >> $GITHUB_ENV ;;
+            2) echo "ZIP_NAME=FusionX-NEXT-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
+               echo "KERNEL_TYPE=NEXT" >> $GITHUB_ENV ;;
+            3) echo "ZIP_NAME=FusionX-NOKSU-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
+               echo "KERNEL_TYPE=NOKSU" >> $GITHUB_ENV ;;
           esac
+
+      - name: Create ZIP file
+        run: |
+          cd AnyKernel3-${{ matrix.branch }}
+          zip -r9 ../${{ env.ZIP_NAME }}.zip * -x .git* .github*
 
       - name: Upload Flashable Kernel Zip
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ZIP_NAME }}
-          path: |
-            AnyKernel3-${{ matrix.branch }}/
-            !AnyKernel3-${{ matrix.branch }}/.git
-            !AnyKernel3-${{ matrix.branch }}/.github
+          path: ${{ env.ZIP_NAME }}.zip
+
+  telegram_notification:
+    needs: package_anykernel
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Download all ZIP artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Send Telegram notifications
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CLANG_TOOLCHAIN: ${{ github.event.inputs.CLANG_TOOLCHAIN }}
+          LTO_CONFIG: ${{ github.event.inputs.USE_LTO_THIN }}
+          KERNEL_TREE_BRANCH_1: ${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}
+          KERNEL_TREE_BRANCH_2: ${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}
+          KERNEL_TREE_BRANCH_3: ${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}
+        run: |
+          # Create Python script to send Telegram messages
+          cat > send_telegram.py << 'EOF'
+          import os
+          import requests
+          import glob
+
+          def send_telegram_message(bot_token, chat_id, message, file_path=None):
+              if file_path:
+                  # Send document with caption
+                  url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+                  files = {'document': open(file_path, 'rb')}
+                  data = {
+                      'chat_id': chat_id,
+                      'caption': message,
+                      'parse_mode': 'HTML'
+                  }
+                  response = requests.post(url, data=data, files=files)
+              else:
+                  # Send text message only
+                  url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+                  data = {
+                      'chat_id': chat_id,
+                      'text': message,
+                      'parse_mode': 'HTML'
+                  }
+                  response = requests.post(url, data=data)
+              
+              return response.json()
+
+          # Get environment variables
+          bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+          chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+          clang_toolchain = os.environ.get('CLANG_TOOLCHAIN')
+          lto_config = os.environ.get('LTO_CONFIG')
+          branch_1 = os.environ.get('KERNEL_TREE_BRANCH_1', 'N/A')
+          branch_2 = os.environ.get('KERNEL_TREE_BRANCH_2', 'N/A')
+          branch_3 = os.environ.get('KERNEL_TREE_BRANCH_3', 'N/A')
+
+          # Find all ZIP files
+          zip_files = glob.glob('artifacts/**/*.zip', recursive=True)
+          
+          if not zip_files:
+              message = "❌ <b>Build Failed!</b>\nNo ZIP files were generated."
+              result = send_telegram_message(bot_token, chat_id, message)
+              print(result)
+              exit(1)
+
+          # Send build completion message
+          completion_message = f"""
+           <b>FusionX Kernel Build Complete!</b>
+
+           <b>Generated Files:</b> {len(zip_files)}
+           <b>Clang:</b> {clang_toolchain}
+           <b>LTO:</b> {'THIN' if lto_config == 'true' else 'FULL'}
+          
+           <b>Branches:</b>
+          - SUSFS: {branch_1}
+          - NEXT: {branch_2}
+          - NOKSU: {branch_3}
+
+           <b>Files:</b>
+          """
+
+          # Send initial completion message
+          send_telegram_message(bot_token, chat_id, completion_message)
+
+          # Send each ZIP file separately
+          for zip_file in zip_files:
+              file_name = os.path.basename(zip_file)
+              file_message = f" <b>{file_name}</b>\nReady for download!"
+              
+              result = send_telegram_message(bot_token, chat_id, file_message, zip_file)
+              print(f"Sent {file_name}: {result}")
+
+          EOF
+
+          # Run the Telegram script
+          python3 send_telegram.py
