@@ -1,4 +1,4 @@
-name: TRY2
+name: FD-tester-munch-builder
 
 on:
   pull_request:
@@ -8,8 +8,12 @@ on:
         description: 'Custom Build Title'
         required: false
       KERNEL_TREE_1:
-        description: 'Kernel Tree'
+        description: 'Kernel Tree 1'
         default: 'https://github.com/SenX-Private-Space/fx-tst.git'
+        required: true
+      KERNEL_TREE_BRANCH_1:
+        description: 'Kernel Tree Branch 1'
+        default: 'fx-base'
         required: true
       CODENAME:
         description: 'Phone Codename'
@@ -27,10 +31,6 @@ on:
         description: 'default=neutron, write aosp for aosp 20 clang'
         default: 'neutron'
         required: false
-        type: choice
-        options:
-          - neutron
-          - aosp
       USE_LTO_THIN:
         description: 'Use LTO THIN instead of LTO FULL'
         required: false
@@ -41,7 +41,6 @@ jobs:
   build:
     strategy:
       matrix:
-        kernel: [1, 2, 3, 4]
         type: [original, modified, swift, normal-gpustk, slightuc-gpustk, effcpu-gpustk]
     runs-on: ubuntu-latest
     env:
@@ -66,7 +65,7 @@ jobs:
             ${{ github.event.inputs.COMPILER }}-${{ runner.os }}-
             ${{ github.event.inputs.COMPILER }}-
 
-      - name: Download & Extract Clang
+      - name: Download & Extract Clang (If not cached)
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           if [[ "${{ github.event.inputs.COMPILER }}" == "aosp" ]]; then
@@ -79,23 +78,18 @@ jobs:
             unzstd -d clang.tar.zst
             tar -xf clang.tar -C clang-neutron
           fi
-          
+
       - name: Set Kernel Environment Variables
         run: |
           echo "KERNEL_TREE=${{ github.event.inputs.KERNEL_TREE_1 }}" >> $GITHUB_ENV
-          case "${{ matrix.kernel }}" in
-            1) echo "KERNEL_TREE_BRANCH=fx-base" >> $GITHUB_ENV ;;
-            2) echo "KERNEL_TREE_BRANCH=fx-base" >> $GITHUB_ENV ;;
-            3) echo "KERNEL_TREE_BRANCH=fx-base" >> $GITHUB_ENV ;;
-            4) echo "KERNEL_TREE_BRANCH=fx-base" >> $GITHUB_ENV ;;
-          esac
-         
+          echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}" >> $GITHUB_ENV
+
       - name: Checkout Kernel via PAT
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           if [[ "${{ github.event.inputs.KERNEL_TREE_1 }}" == "private" ]]; then
-            REPO_URL="https://x-access-token:${GH_PAT}@github.com/SenX-Private-Space/fx-tst.git"
+            REPO_URL="https://x-access-token:${GH_PAT}@github.com/re-noroi/FD-private.git"
           else
             REPO_URL="${{ github.event.inputs.KERNEL_TREE_1 }}"
           fi
@@ -104,8 +98,8 @@ jobs:
       - name: Kernel Version
         run: |
           cd kernel_tree
-          if [[ "${{ github.event.inputs.CUSTOM_SED }}" != "-FusionX" ]]; then
-            sed -i -e 's/CONFIG_LOCALVERSION="-FusionX"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
+          if [[ "${{ github.event.inputs.CUSTOM_SED }}" != "-FakeDreamer" ]]; then
+            sed -i -e 's/CONFIG_LOCALVERSION="-FakeDreamer"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
           fi
 
       - name: Change LTO Configuration to THIN
@@ -132,12 +126,6 @@ jobs:
           \t\trc = get_cycle_count(chip->counter, &pval->intval);\
           \t#endif\
           \t\tbreak;' drivers/power/supply/qcom/qpnp-fg-gen4.c
-      
-      - name: Apply Patches (Skip for Kernel 3)
-        if: matrix.kernel != 3
-        run: |
-          cd kernel_tree
-          bash nextpatch.sh
 
       - name: Apply Stock GPU Frequency Patch
         if: matrix.type == 'normal-gpustk' || matrix.type == 'slightuc-gpustk' || matrix.type == 'effcpu-gpustk'
@@ -145,6 +133,11 @@ jobs:
           cd kernel_tree
           echo "Applying stock GPU frequency patch for ${{ matrix.type }} build..."
           patch -p1 -f < "0001-stock-gpu-freq.patch"
+
+      - name: Apply Patches
+        run: |
+          cd kernel_tree
+          bash nextpatch.sh
 
       - name: Apply Modifications (if swift build)
         if: matrix.type == 'swift'
@@ -183,7 +176,7 @@ jobs:
           sed -i -e '/<3187200>;/c\//<3187200>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
           sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
           sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
-      
+
       - name: Build Kernel
         run: |
           if [[ "${{ github.event.inputs.COMPILER }}" == "aosp" ]]; then
@@ -204,50 +197,39 @@ jobs:
           echo "Generated files:"
           ls -la out/arch/arm64/boot/
           
-          # Always copy Image
-          cp out/arch/arm64/boot/Image ../Image
-          
-          # Handle different build types and kernel variants
           if [[ "${{ matrix.type }}" == "original" ]]; then
-            if [[ "${{ matrix.kernel }}" == "1" ]]; then
-              if [[ -f out/arch/arm64/boot/dtbo.img ]]; then
-                cp out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
-              fi
-              if [[ -f out/arch/arm64/boot/dtb ]]; then
-                cp out/arch/arm64/boot/dtb ../munch-normal-dtb
-              fi
-            elif [[ "${{ matrix.kernel }}" == "2" ]]; then
-              if [[ -f out/arch/arm64/boot/dtbo.img ]]; then
-                cp out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
-              fi
-              if [[ -f out/arch/arm64/boot/dtb ]]; then
-                cp out/arch/arm64/boot/dtb ../munch-effcpu-dtb
-              fi
+            # Check if dtbo.img exists before moving
+            if [[ -f out/arch/arm64/boot/dtbo.img ]]; then
+              mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
             fi
+            # Check if dtb exists before moving  
+            if [[ -f out/arch/arm64/boot/dtb ]]; then
+              mv out/arch/arm64/boot/dtb ../munch-normal-dtb
+            fi
+            # Always copy Image
+            cp out/arch/arm64/boot/Image ../Image
           elif [[ "${{ matrix.type }}" == "swift" ]]; then
             if [[ -f out/arch/arm64/boot/dtb ]]; then
-              cp out/arch/arm64/boot/dtb ../munch-slightuc-dtb
+              mv out/arch/arm64/boot/dtb ../munch-slightuc-dtb
             fi
           elif [[ "${{ matrix.type }}" == "modified" ]]; then
-            if [[ "${{ matrix.kernel }}" == "1" || "${{ matrix.kernel }}" == "2" ]]; then
-              if [[ -f out/arch/arm64/boot/dtbo.img ]]; then
-                cp out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
-              fi
-              if [[ -f out/arch/arm64/boot/dtb ]]; then
-                cp out/arch/arm64/boot/dtb ../munch-effcpu-dtb
-              fi
+            if [[ -f out/arch/arm64/boot/dtbo.img ]]; then
+              mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
+            fi
+            if [[ -f out/arch/arm64/boot/dtb ]]; then
+              mv out/arch/arm64/boot/dtb ../munch-effcpu-dtb
             fi
           elif [[ "${{ matrix.type }}" == "normal-gpustk" ]]; then
             if [[ -f out/arch/arm64/boot/dtb ]]; then
-              cp out/arch/arm64/boot/dtb ../munch-normal-gpustk-dtb
+              mv out/arch/arm64/boot/dtb ../munch-normal-gpustk-dtb
             fi
           elif [[ "${{ matrix.type }}" == "slightuc-gpustk" ]]; then
             if [[ -f out/arch/arm64/boot/dtb ]]; then
-              cp out/arch/arm64/boot/dtb ../munch-slightuc-gpustk-dtb
+              mv out/arch/arm64/boot/dtb ../munch-slightuc-gpustk-dtb
             fi
           elif [[ "${{ matrix.type }}" == "effcpu-gpustk" ]]; then
             if [[ -f out/arch/arm64/boot/dtb ]]; then
-              cp out/arch/arm64/boot/dtb ../munch-effcpu-gpustk-dtb
+              mv out/arch/arm64/boot/dtb ../munch-effcpu-gpustk-dtb
             fi
           fi
 
@@ -256,20 +238,54 @@ jobs:
           echo "Checking for artifacts in current directory:"
           ls -la
           
-          # Verify Image always exists
-          if [[ -f Image ]]; then
-            echo "✓ Image found"
-          else
-            echo "✗ Image missing"
-            exit 1
+          if [[ "${{ matrix.type }}" == "original" ]]; then
+            # Only check for files that should exist
+            if [[ -f Image ]]; then
+              echo "✓ Image found"
+            else
+              echo "✗ Image missing"
+              exit 1
+            fi
+            # Optional files - don't fail if missing
+            if [[ -f munch-aosp-dtbo.img ]]; then
+              echo "✓ DTBO found"
+            else
+              echo "⚠ DTBO not found (might be expected)"
+            fi
+            if [[ -f munch-normal-dtb ]]; then
+              echo "✓ DTB found"
+            else
+              echo "⚠ DTB not found (might be expected)"
+            fi
+          elif [[ "${{ matrix.type }}" == "swift" ]]; then
+            if [[ ! -f munch-slightuc-dtb ]]; then
+              echo "⚠ Swift DTB not found - continuing anyway"
+            fi
+          elif [[ "${{ matrix.type }}" == "modified" ]]; then
+            # Check at least one file exists
+            if [[ ! -f munch-miui-dtbo.img && ! -f munch-effcpu-dtb ]]; then
+              echo "Error: No modified build artifacts found"
+              exit 1
+            fi
+          elif [[ "${{ matrix.type }}" == "normal-gpustk" ]]; then
+            if [[ ! -f munch-normal-gpustk-dtb ]]; then
+              echo "⚠ Normal GPU Stock DTB not found - continuing anyway"
+            fi
+          elif [[ "${{ matrix.type }}" == "slightuc-gpustk" ]]; then
+            if [[ ! -f munch-slightuc-gpustk-dtb ]]; then
+              echo "⚠ Slight UC GPU Stock DTB not found - continuing anyway"
+            fi
+          elif [[ "${{ matrix.type }}" == "effcpu-gpustk" ]]; then
+            if [[ ! -f munch-effcpu-gpustk-dtb ]]; then
+              echo "⚠ Efficient CPU GPU Stock DTB not found - continuing anyway"
+            fi
           fi
 
       - name: Upload Kernel Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-${{ matrix.kernel }}-${{ matrix.type }}
+          name: kernel-1-${{ matrix.type }}
           path: |
-            Image
             munch-aosp-dtbo.img
             munch-miui-dtbo.img
             munch-normal-dtb
@@ -278,50 +294,88 @@ jobs:
             munch-normal-gpustk-dtb
             munch-slightuc-gpustk-dtb
             munch-effcpu-gpustk-dtb
+            Image
 
   package_anykernel:
     needs: build
-    strategy:
-      matrix:
-        kernel: [1, 2, 3]
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download All Kernel Build Artifacts
+      - name: Download Kernel Build Original
         uses: actions/download-artifact@v4
         with:
-          pattern: kernel-${{ matrix.kernel }}-*
-          path: kernel-artifacts
-          merge-multiple: true
+          name: kernel-1-original
+          path: kernel-1-original
+
+      - name: Download Kernel Build Modified
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-1-modified
+          path: kernel-1-modified
+
+      - name: Download Kernel Build Swift
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-1-swift
+          path: kernel-1-swift
+
+      - name: Download Kernel Build Normal-GPUStk
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-1-normal-gpustk
+          path: kernel-1-normal-gpustk
+
+      - name: Download Kernel Build SlightUC-GPUStk
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-1-slightuc-gpustk
+          path: kernel-1-slightuc-gpustk
+
+      - name: Download Kernel Build EffCPU-GPUStk
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-1-effcpu-gpustk
+          path: kernel-1-effcpu-gpustk
 
       - name: Clone AnyKernel3
-        run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b fusionX AnyKernel3-${{ matrix.kernel }}
+        run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b fusionX AnyKernel3-1
 
-      - name: Move Kernel Files to AnyKernel3
+      - name: Move Kernel Files to AnyKernel3 and List them
         run: |
-          # Move all kernel artifacts to AnyKernel3
-          cp -v kernel-artifacts/* AnyKernel3-${{ matrix.kernel }}/ || true
-          
+          # Move the files from each build directory to AnyKernel3
+          cp -v kernel-1-original/* AnyKernel3-1/ || true
+          cp -v kernel-1-modified/* AnyKernel3-1/ || true
+          cp -v kernel-1-swift/* AnyKernel3-1/ || true
+          cp -v kernel-1-normal-gpustk/* AnyKernel3-1/ || true
+          cp -v kernel-1-slightuc-gpustk/* AnyKernel3-1/ || true
+          cp -v kernel-1-effcpu-gpustk/* AnyKernel3-1/ || true
+             
           # List all files in AnyKernel3 to verify
           echo "Contents of AnyKernel3 directory:"
-          ls -la AnyKernel3-${{ matrix.kernel }}/
+          ls -la AnyKernel3-1/
+             
+          # Specifically check for DTBO files
+          echo "DTBO files in AnyKernel3:"
+          ls -la AnyKernel3-1/*dtbo.img || echo "No DTBO files found!"
+
+          # Check for DTB files
+          echo "DTB files in AnyKernel3:"
+          ls -la AnyKernel3-1/*dtb || echo "No DTB files found!"
+
+          # Check for Image file
+          echo "Image file in AnyKernel3:"
+          ls -la AnyKernel3-1/Image || echo "No Image file found!"
 
       - name: Define ZIP Name
         run: |
           COMPILED_DATE=$(date +%Y%m%d)
-          if [[ "${{ matrix.kernel }}" == "1" ]]; then
-            echo "ZIP_NAME=[FusionX-][next-${{ github.event.inputs.CODENAME }}-$COMPILED_DATE]" >> $GITHUB_ENV
-          elif [[ "${{ matrix.kernel }}" == "2" ]]; then
-            echo "ZIP_NAME=[FusionX-][susfs-${{ github.event.inputs.CODENAME }}-$COMPILED_DATE]" >> $GITHUB_ENV
-          else
-            echo "ZIP_NAME=[FusionX-][noksu-${{ github.event.inputs.CODENAME }}-$COMPILED_DATE]" >> $GITHUB_ENV
-          fi
-      
+          echo "ZIP_NAME=[FD-][TEST-${{ github.event.inputs.CODENAME }}-$COMPILED_DATE]" >> $GITHUB_ENV
+
       - name: Upload Flashable Kernel Zip
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ZIP_NAME }}
           path: |
-            AnyKernel3-${{ matrix.kernel }}/
-            !AnyKernel3-${{ matrix.kernel }}/.git
-            !AnyKernel3-${{ matrix.kernel }}/.github
+            AnyKernel3-1/
+            !AnyKernel3-1/.git
+            !AnyKernel3-1/.github
