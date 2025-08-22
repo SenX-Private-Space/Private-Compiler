@@ -421,20 +421,6 @@ jobs:
               send_telegram_message(bot_token, chat_id, "❌ <b>Build Failed!</b>")
               exit(1)
 
-          # Calculate build duration
-          manila_tz = timezone(timedelta(hours=8))
-          now = datetime.now(manila_tz)
-          
-          if build_start_time:
-              start_time = datetime.fromisoformat(build_start_time.replace('Z', '+00:00')).astimezone(manila_tz)
-              duration = now - start_time
-              duration_mins = int(duration.total_seconds() / 60)
-              build_duration = f"{duration_mins} mins"
-          else:
-              build_duration = "Unknown"
-          
-          build_date = now.strftime("%B %d, %Y")
-
           # Send each file with combined message
           for zip_file in zip_files:
               file_name = os.path.basename(zip_file)
@@ -457,8 +443,6 @@ jobs:
             <b> FusionX Build Complete! </b>
             ==============================
             <b> Date:</b>        {build_date}
-            <b> Duration:</b>    {build_duration}
-            <b> Codename:</b>    munch
             <b> Branch:</b>      {branch_info}
             <b> Lto:</b>         {lto}
             <b> Clang:</b>       {clang}
