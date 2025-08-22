@@ -13,28 +13,28 @@ on:
         required: true
       KERNEL_TREE_BRANCH_1:
         description: 'Kernel Tree Branch (SUSFS)'
-        default: 'wip-susfs'
+        default: 'susfs1'
         required: false
         type: choice
         options:
           - stable-susfs
-          - wip-susfs
+          - susfs1
       KERNEL_TREE_BRANCH_2:
         description: 'Kernel Tree Branch (NEXT)'
-        default: 'wip-next'
+        default: 'next1'
         required: false
         type: choice
         options:
           - stable-next
-          - wip-next
+          - next1
       KERNEL_TREE_BRANCH_3:
         description: 'Kernel Tree Branch (NOKSU)'
-        default: 'fx-base'
+        default: 'noksu1'
         required: false
         type: choice
         options:
           - fx-base
-          - stable-noksu
+          - noksu1
       VERSION:
         description: 'Zip Version'
         default: '2.x'
@@ -66,7 +66,7 @@ jobs:
     strategy:
       matrix:
         kernel: [1, 2, 3, 4, 5, 6]
-        branch: [1, 2, 3]  # 1=SUSFS, 2=NEXT, 3=NOKSU
+        branch: [SUSFS, NEXT, NOKSU] 
     runs-on: ubuntu-latest
     env:
       UPLOAD_TO_RELEASE: false
@@ -114,12 +114,12 @@ jobs:
         run: |
           echo "KERNEL_TREE=${{ github.event.inputs.KERNEL_TREE_1 }}" >> $GITHUB_ENV
           case "${{ matrix.branch }}" in
-            1) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}" >> $GITHUB_ENV
-               echo "BRANCH_NAME=SUSFS" >> $GITHUB_ENV ;;
-            2) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}" >> $GITHUB_ENV
-               echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV ;;
-            3) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}" >> $GITHUB_ENV
-               echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV ;;
+            SUSFS) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}" >> $GITHUB_ENV
+                   echo "BRANCH_NAME=SUSFS" >> $GITHUB_ENV ;;
+            NEXT) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}" >> $GITHUB_ENV
+                  echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV ;;
+            NOKSU) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}" >> $GITHUB_ENV
+                   echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV ;;
           esac
 
       - name: Checkout Kernel
@@ -172,7 +172,7 @@ jobs:
           patch -p1 -f < "0001-stock-gpu-freq.patch"
 
       - name: Apply Patches (SUSFS and NEXT only)
-        if: matrix.branch != 3
+        if: matrix.branch != 'NOKSU'
         run: |
           cd kernel_tree
           bash nextpatch.sh
@@ -280,7 +280,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        branch: [1, 2, 3]  # 1=SUSFS, 2=NEXT, 3=NOKSU
+        branch: [SUSFS, NEXT, NOKSU]
     runs-on: ubuntu-latest
 
     steps:
@@ -342,14 +342,8 @@ jobs:
       - name: Define ZIP Name
         run: |
           COMPILED_DATE=$(date +%Y%m%d)
-          case "${{ matrix.branch }}" in
-            1) echo "ZIP_NAME=FusionX-SUSFS-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
-               echo "KERNEL_TYPE=SUSFS" >> $GITHUB_ENV ;;
-            2) echo "ZIP_NAME=FusionX-NEXT-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
-               echo "KERNEL_TYPE=NEXT" >> $GITHUB_ENV ;;
-            3) echo "ZIP_NAME=FusionX-NOKSU-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
-               echo "KERNEL_TYPE=NOKSU" >> $GITHUB_ENV ;;
-          esac
+          echo "ZIP_NAME=FusionX-${{ matrix.branch }}-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
+          echo "KERNEL_TYPE=${{ matrix.branch }}" >> $GITHUB_ENV
 
       - name: Create ZIP file
         run: |
