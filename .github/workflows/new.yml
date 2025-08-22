@@ -379,6 +379,7 @@ jobs:
           KERNEL_TREE_BRANCH_2: ${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}
           KERNEL_TREE_BRANCH_3: ${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}
           BUILD_START_TIME: ${{ github.run_started_at }}
+          VERSION: ${{ github.event.inputs.VERSION }}
         run: |
           cat > send_telegram.py << 'EOF'
           import os
@@ -388,14 +389,14 @@ jobs:
 
           def send_telegram_file(bot_token, chat_id, message, file_path):
               url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
-              files = {'document': open(file_path, 'rb')}
-              data = {
-                  'chat_id': chat_id,
-                  'caption': message,
-                  'parse_mode': 'HTML'
-              }
-              response = requests.post(url, data=data, files=files)
-              files['document'].close()
+              with open(file_path, 'rb') as f:
+                  files = {'document': f}
+                  data = {
+                      'chat_id': chat_id,
+                      'caption': message,
+                      'parse_mode': 'HTML'
+                  }
+                  response = requests.post(url, data=data, files=files)
               return response.json()
 
           def send_telegram_message(bot_token, chat_id, message):
@@ -410,13 +411,22 @@ jobs:
           # Environment variables
           bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
           chat_id = os.environ.get('TELEGRAM_CHAT_ID')
-          clang = os.environ.get('CLANG_TOOLCHAIN')
+          clang = os.environ.get('CLANG_TOOLCHAIN', 'aosp')
           lto = 'THIN' if os.environ.get('LTO_CONFIG') == 'true' else 'FULL'
           build_start_time = os.environ.get('BUILD_START_TIME')
+          version = os.environ.get('VERSION', '2.x')
+          
+          # Get Manila timezone build date
+          manila_tz = timezone(timedelta(hours=8))
+          build_date = datetime.now(manila_tz).strftime('%Y-%m-%d %H:%M:%S')
           
           # Find ZIP files
           zip_files = glob.glob('artifacts/**/*.zip', recursive=True)
           
+          if not bot_token or not chat_id:
+              print("Missing Telegram credentials")
+              exit(1)
+              
           if not zip_files:
               send_telegram_message(bot_token, chat_id, "❌ <b>Build Failed!</b>")
               exit(1)
@@ -444,14 +454,21 @@ jobs:
             ==============================
             <b> Date:</b>        {build_date}
             <b> Branch:</b>      {branch_info}
+            <b> Version:</b>     {version}
             <b> Lto:</b>         {lto}
             <b> Clang:</b>       {clang}
             <b> Build Type:</b>  {build_type}
             ==============================
             </pre>"""
               
-              result = send_telegram_file(bot_token, chat_id, caption, zip_file)
-              print(f"Sent {file_name}: {result.get('ok', False)}")
+              try:
+                  result = send_telegram_file(bot_token, chat_id, caption, zip_file)
+                  if result.get('ok'):
+                      print(f"✅ Successfully sent {file_name}")
+                  else:
+                      print(f"❌ Failed to send {file_name}: {result}")
+              except Exception as e:
+                  print(f"❌ Error sending {file_name}: {str(e)}")
 
           EOF
 
