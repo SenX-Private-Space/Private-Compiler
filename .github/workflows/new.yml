@@ -1,4 +1,5 @@
-name: FusionX-Final_ALL-IN-ONE
+
+name: FusionX-ALL-IN-ONE
 
 on:
   pull_request:
@@ -9,32 +10,32 @@ on:
         required: false
       KERNEL_TREE_1:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenX-Private-Space/fx-tst'
+        default: 'https://github.com/SenX-Private-Space/FUSIONX-SM8250.git'
         required: true
       KERNEL_TREE_BRANCH_1:
         description: 'Kernel Tree Branch (SUSFS)'
-        default: 'susfs3'
+        default: 'wip-susfs'
         required: false
         type: choice
         options:
           - stable-susfs
-          - susfs3
+          - wip-susfs
       KERNEL_TREE_BRANCH_2:
         description: 'Kernel Tree Branch (NEXT)'
-        default: 'next3'
+        default: 'wip-next'
         required: false
         type: choice
         options:
           - stable-next
-          - next3
+          - wip-next
       KERNEL_TREE_BRANCH_3:
         description: 'Kernel Tree Branch (NOKSU)'
-        default: 'noksu3'
+        default: 'wip-noksu'
         required: false
         type: choice
         options:
-          - fx-base
-          - noksu3
+          - stable-noksu
+          - wip-noksu
       VERSION:
         description: 'Zip Version'
         default: '2.x'
@@ -49,7 +50,7 @@ on:
         required: false
       CLANG_TOOLCHAIN:
         description: 'Clang toolchain selection'
-        default: 'aosp'
+        default: 'aosp clang'
         required: true
         type: choice
         options:
