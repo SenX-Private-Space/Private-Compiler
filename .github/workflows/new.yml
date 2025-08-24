@@ -170,7 +170,7 @@ jobs:
         if: matrix.kernel == 3 || matrix.kernel == 4 || matrix.kernel == 6
         run: |
           cd kernel_tree
-          patch -p1 -f < "0001-stock-gpu-freq.patch"
+          patch -p1 -f < "0002-stock-gpu-frequency.patch"
 
       - name: Apply Patches (SUSFS and NEXT only)
         if: matrix.branch != 'NOKSU'
