@@ -286,32 +286,7 @@ jobs:
           name: kernel-OCUV-base
           path: Image
 
-      # Upload kernel-specific artifacts for regular branches (SUSFS, NEXT, NOKSU)
-      - name: Upload Kernel Artifacts - Kernel 3
-        uses: actions/upload-artifact@v4
-        if: matrix.kernel == 3 && matrix.branch != 'OCUV'
-        with:
-          name: kernel-part-${{ matrix.branch }}-3-addon
-          path: |
-            munch-aosp-dtbo.img
-            munch-normal-gpustk-dtb
-
-      - name: Upload Kernel Artifacts - Kernel 4
-        uses: actions/upload-artifact@v4
-        if: matrix.kernel == 4 && matrix.branch != 'OCUV'
-        with:
-          name: kernel-part-${{ matrix.branch }}-4-addon
-          path: |
-            munch-miui-dtbo.img
-            munch-effcpu-gpustk-dtb
-
-      - name: Upload Kernel Artifacts - Kernel 6
-        uses: actions/upload-artifact@v4
-        if: matrix.kernel == 6 && matrix.branch != 'OCUV'
-        with:
-          name: kernel-part-${{ matrix.branch }}-6-addon
-          path: |
-            munch-slightuc-gpustk-dtb
+      # Upload kernel-specific artifacts for regular branches (SUSFS, NEXT,
 
       # Upload OCUV DTB artifacts
       - name: Upload OCUV DTB - Normal
@@ -385,14 +360,29 @@ jobs:
           # Rename files to match AnyKernel3 expected names
           cd AnyKernel3-${{ matrix.branch }}
           
-          # Rename dtbo files
-          mv munch-aosp-dtbo.img dtbo.img
-          mv munch-miui-dtbo.img miui-dtbo.img
+          # Rename dtbo files (check if they exist first)
+          if [ -f "munch-aosp-dtbo.img" ]; then
+            mv munch-aosp-dtbo.img dtbo.img
+          fi
+          if [ -f "munch-miui-dtbo.img" ]; then
+            mv munch-miui-dtbo.img miui-dtbo.img
+          fi
           
-          # Rename dtb files to keep all variants
-          mv munch-normal-gpustk-dtb normal-gpustk-dtb
-          mv munch-effcpu-gpustk-dtb effcpu-gpustk-dtb
-          mv munch-slightuc-gpustk-dtb slightuc-gpustk-dtb
+          # Rename dtb files to keep all variants (check if they exist first)
+          if [ -f "munch-normal-gpustk-dtb" ]; then
+            mv munch-normal-gpustk-dtb normal-gpustk-dtb
+          fi
+          if [ -f "munch-effcpu-gpustk-dtb" ]; then
+            mv munch-effcpu-gpustk-dtb effcpu-gpustk-dtb
+          fi
+          if [ -f "munch-slightuc-gpustk-dtb" ]; then
+            mv munch-slightuc-gpustk-dtb slightuc-gpustk-dtb
+          fi
+
+      - name: Debug - List files in AnyKernel3
+        run: |
+          echo "Files in AnyKernel3-${{ matrix.branch }}:"
+          ls -la AnyKernel3-${{ matrix.branch }}/
 
       - name: Define ZIP Name
         run: |
