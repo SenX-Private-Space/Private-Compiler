@@ -106,7 +106,6 @@ jobs:
     env:
       UPLOAD_TO_RELEASE: false
 
-
     steps:
       - name: Install Dependencies
         run: sudo apt install flex libncurses6
@@ -251,20 +250,14 @@ jobs:
               mv out/arch/arm64/boot/dtb.img ../munch-slightuc-dtb-ocuv
             fi
           else
-            # Original logic for other branches
-            if [[ "${{ matrix.kernel }}" == 1 ]]; then
+            # Logic for other branches (SUSFS, NEXT, NOKSU - only kernels 3, 4, 6)
+            if [[ "${{ matrix.kernel }}" == 3 ]]; then
               cp out/arch/arm64/boot/Image ../Image
               mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
-              mv out/arch/arm64/boot/dtb.img ../munch-normal-dtb
-            elif [[ "${{ matrix.kernel }}" == 2 ]]; then
-              mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
-              mv out/arch/arm64/boot/dtb.img ../munch-effcpu-dtb
-            elif [[ "${{ matrix.kernel }}" == 3 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
             elif [[ "${{ matrix.kernel }}" == 4 ]]; then
+              mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
               mv out/arch/arm64/boot/dtb.img ../munch-effcpu-gpustk-dtb
-            elif [[ "${{ matrix.kernel }}" == 5 ]]; then
-              mv out/arch/arm64/boot/dtb.img ../munch-slightuc-dtb
             elif [[ "${{ matrix.kernel }}" == 6 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-slightuc-gpustk-dtb
             fi
@@ -273,55 +266,31 @@ jobs:
       # Upload Image separately (shared across all kernels for each branch)
       - name: Upload Kernel Base Image
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 1
+        if: (matrix.kernel == 1 && matrix.branch == 'OCUV') || (matrix.kernel == 3 && matrix.branch != 'OCUV')
         with:
           name: kernel-${{ matrix.branch }}-base
           path: Image
 
-      # Upload kernel-specific artifacts for regular branches
-      - name: Upload Kernel Artifacts - Kernel 1
-        uses: actions/upload-artifact@v4
-        if: matrix.kernel == 1 && matrix.branch != 'OCUV'
-        with:
-          name: kernel-part-${{ matrix.branch }}-1-addon
-          path: |
-            munch-aosp-dtbo.img
-            munch-normal-dtb
-
-      - name: Upload Kernel Artifacts - Kernel 2
-        uses: actions/upload-artifact@v4
-        if: matrix.kernel == 2 && matrix.branch != 'OCUV'
-        with:
-          name: kernel-part-${{ matrix.branch }}-2-addon
-          path: |
-            munch-miui-dtbo.img
-            munch-effcpu-dtb
-
-      - name: Upload Kernel Artifacts - Kernel 3
+      # Upload kernel-specific artifacts for regular branches (SUSFS, NEXT, NOKSU)
+      - name: Upload Kernel Artifacts - Kernel 3 (replaces kernel 1)
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 3 && matrix.branch != 'OCUV'
         with:
           name: kernel-part-${{ matrix.branch }}-3-addon
           path: |
+            munch-aosp-dtbo.img
             munch-normal-gpustk-dtb
 
-      - name: Upload Kernel Artifacts - Kernel 4
+      - name: Upload Kernel Artifacts - Kernel 4 (replaces kernel 2)
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 4 && matrix.branch != 'OCUV'
         with:
           name: kernel-part-${{ matrix.branch }}-4-addon
           path: |
+            munch-miui-dtbo.img
             munch-effcpu-gpustk-dtb
 
-      - name: Upload Kernel Artifacts - Kernel 5
-        uses: actions/upload-artifact@v4
-        if: matrix.kernel == 5 && matrix.branch != 'OCUV'
-        with:
-          name: kernel-part-${{ matrix.branch }}-5-addon
-          path: |
-            munch-slightuc-dtb
-
-      - name: Upload Kernel Artifacts - Kernel 6
+      - name: Upload Kernel Artifacts - Kernel 6 (replaces kernel 5)
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 6 && matrix.branch != 'OCUV'
         with:
@@ -367,18 +336,6 @@ jobs:
           name: kernel-${{ matrix.branch }}-base
           path: kernel-${{ matrix.branch }}-base
 
-      - name: Download Kernel Build Addon 1
-        uses: actions/download-artifact@v4
-        with:
-          name: kernel-part-${{ matrix.branch }}-1-addon
-          path: kernel-part-${{ matrix.branch }}-1-addon
-
-      - name: Download Kernel Build Addon 2
-        uses: actions/download-artifact@v4
-        with:
-          name: kernel-part-${{ matrix.branch }}-2-addon
-          path: kernel-part-${{ matrix.branch }}-2-addon
-
       - name: Download Kernel Build Addon 3
         uses: actions/download-artifact@v4
         with:
@@ -390,12 +347,6 @@ jobs:
         with:
           name: kernel-part-${{ matrix.branch }}-4-addon
           path: kernel-part-${{ matrix.branch }}-4-addon
-
-      - name: Download Kernel Build Addon 5
-        uses: actions/download-artifact@v4
-        with:
-          name: kernel-part-${{ matrix.branch }}-5-addon
-          path: kernel-part-${{ matrix.branch }}-5-addon
 
       - name: Download Kernel Build Addon 6
         uses: actions/download-artifact@v4
@@ -429,17 +380,25 @@ jobs:
         run: |
           # Move base kernel files
           mv kernel-${{ matrix.branch }}-base/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-part-${{ matrix.branch }}-1-addon/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-part-${{ matrix.branch }}-2-addon/* AnyKernel3-${{ matrix.branch }}/
           mv kernel-part-${{ matrix.branch }}-3-addon/* AnyKernel3-${{ matrix.branch }}/
           mv kernel-part-${{ matrix.branch }}-4-addon/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-part-${{ matrix.branch }}-5-addon/* AnyKernel3-${{ matrix.branch }}/
           mv kernel-part-${{ matrix.branch }}-6-addon/* AnyKernel3-${{ matrix.branch }}/
           
-          # Replace specific DTBs with OCUV versions
-          cp ocuv-dtb-normal/munch-normal-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-normal-dtb
-          cp ocuv-dtb-effcpu/munch-effcpu-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-effcpu-dtb
-          cp ocuv-dtb-slightuc/munch-slightuc-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-slightuc-dtb
+          # Map the new file structure to the expected names in AnyKernel
+          # kernel 3 artifacts -> normal variants
+          mv AnyKernel3-${{ matrix.branch }}/munch-normal-gpustk-dtb AnyKernel3-${{ matrix.branch }}/munch-normal-dtb
+          
+          # kernel 4 artifacts -> effcpu variants  
+          mv AnyKernel3-${{ matrix.branch }}/munch-effcpu-gpustk-dtb AnyKernel3-${{ matrix.branch }}/munch-effcpu-dtb
+          
+          # kernel 6 artifacts -> slightuc variants
+          mv AnyKernel3-${{ matrix.branch }}/munch-slightuc-gpustk-dtb AnyKernel3-${{ matrix.branch }}/munch-slightuc-dtb
+          
+          # Replace specific DTBs with OCUV versions (if OCUV should replace the non-gpustk variants)
+          # Uncomment these lines if you want OCUV DTBs to replace the non-gpustk variants:
+          # cp ocuv-dtb-normal/munch-normal-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-normal-dtb-nogpustk
+          # cp ocuv-dtb-effcpu/munch-effcpu-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-effcpu-dtb-nogpustk  
+          # cp ocuv-dtb-slightuc/munch-slightuc-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-slightuc-dtb-nogpustk
 
       - name: Define ZIP Name
         run: |
