@@ -1,5 +1,4 @@
-name: FusionX-optimized
-
+name: FusionX-OPTIMIZED
 on:
   pull_request:
   workflow_dispatch:
@@ -39,6 +38,7 @@ on:
         type: choice
         options:
           - ocuv
+          - ocuv
       VERSION:
         description: 'Zip Version'
         default: '2.x'
@@ -66,14 +66,64 @@ on:
         type: boolean
 
 jobs:
-  # Build all kernel variants for each branch in a single job
   build:
     strategy:
       matrix:
-        branch: [SUSFS, NEXT, NOKSU] 
+        include:
+          # SUSFS full set (1–6)
+          - branch: SUSFS
+            kernel: 1
+          - branch: SUSFS
+            kernel: 2
+          - branch: SUSFS
+            kernel: 3
+          - branch: SUSFS
+            kernel: 4
+          - branch: SUSFS
+            kernel: 5
+          - branch: SUSFS
+            kernel: 6
+
+          # NEXT full set (1–6)
+          - branch: NEXT
+            kernel: 1
+          - branch: NEXT
+            kernel: 2
+          - branch: NEXT
+            kernel: 3
+          - branch: NEXT
+            kernel: 4
+          - branch: NEXT
+            kernel: 5
+          - branch: NEXT
+            kernel: 6
+
+          # NOKSU full set (1–6)
+          - branch: NOKSU
+            kernel: 1
+          - branch: NOKSU
+            kernel: 2
+          - branch: NOKSU
+            kernel: 3
+          - branch: NOKSU
+            kernel: 4
+          - branch: NOKSU
+            kernel: 5
+          - branch: NOKSU
+            kernel: 6
+
+          # OCUV limited set (1, 2, 5)
+          - branch: OCUV
+            kernel: 1
+          - branch: OCUV
+            kernel: 2
+          - branch: OCUV
+            kernel: 5
+
     runs-on: ubuntu-latest
     env:
       UPLOAD_TO_RELEASE: false
+
 
     steps:
       - name: Install Dependencies
@@ -124,14 +174,78 @@ jobs:
                   echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV ;;
             NOKSU) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}" >> $GITHUB_ENV
                    echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV ;;
+            OCUV) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_4 }}" >> $GITHUB_ENV
+                  echo "BRANCH_NAME=OCUV" >> $GITHUB_ENV ;;
           esac
 
       - name: Checkout Kernel
         run: |
           git clone --depth=1 --branch "${{ env.KERNEL_TREE_BRANCH }}" "${{ env.KERNEL_TREE }}" kernel_tree
 
-      # Build all 6 kernel variants in sequence
-      - name: Build All Kernel Variants
+      - name: Kernel Version
+        run: |
+          cd kernel_tree
+          if [[ "${{ github.event.inputs.CUSTOM_SED }}" != "-FusionX" ]]; then
+            sed -i -e 's/CONFIG_LOCALVERSION="-FusionX"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
+          fi
+
+      - name: Change LTO Configuration to THIN
+        if: ${{ github.event.inputs.USE_LTO_THIN == 'true' }}
+        run: |
+          cd kernel_tree
+          echo "Changing LTO configuration from FULL to THIN..."
+          sed -i -e '
+          /CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y/c\CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y
+          /CONFIG_HAS_LTO_CLANG=y/c\CONFIG_HAS_LTO_CLANG=y
+          /# CONFIG_LTO_NONE is not set/c\# CONFIG_LTO_NONE is not set
+          /CONFIG_LTO_CLANG_FULL=y/c\# CONFIG_LTO_CLANG_FULL is not set
+          /# CONFIG_LTO_CLANG_THIN is not set/c\CONFIG_LTO_CLANG_THIN=y
+          ' arch/arm64/configs/vendor/munch_defconfig
+
+      - name: Remove cycle count
+        run: |
+          cd kernel_tree
+          sed -i '/case POWER_SUPPLY_PROP_CYCLE_COUNT:/,/break;/c\
+          \tcase POWER_SUPPLY_PROP_CYCLE_COUNT:\
+          \t#ifdef CONFIG_BATT_VERIFY_BY_DS28E16\
+          \t\tpval->intval = fg->maxim_cycle_count;\
+          \t#else\
+          \t\trc = get_cycle_count(chip->counter, &pval->intval);\
+          \t#endif\
+          \t\tbreak;' drivers/power/supply/qcom/qpnp-fg-gen4.c
+
+      - name: Apply Modifications (if swift build)
+        if: matrix.kernel == 5 || matrix.kernel == 6
+        run: |
+          cd kernel_tree
+          sed -i -e '/<2841600>,/c\<2841600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+
+      - name: Revert to stock gpufreq
+        if: (matrix.kernel == 3 || matrix.kernel == 4 || matrix.kernel == 6) && matrix.branch != 'OCUV'
+        run: |
+          cd kernel_tree
+          patch -p1 -f < "0001-stock-gpu-freq.patch"
+
+      - name: Apply Patches (SUSFS and NEXT only)
+        if: matrix.branch != 'NOKSU' && matrix.branch != 'OCUV'
+        run: |
+          cd kernel_tree
+          bash nextpatch.sh
+
+      - name: Apply Modifications (if modified build)
+        if: matrix.kernel == 2 || matrix.kernel == 4
+        run: |
+          cd kernel_tree
+          sed -i -e '/<2553600>,/c\<2553600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e '/<2649600>,/c\//<2649600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e '/<2745600>,/c\//<2745600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e '/<2841600>,/c\//<2841600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e '/<3187200>;/c\//<3187200>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
+          sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
+
+      - name: Build Kernel
         run: |
           export PATH="${{ env.CLANG_PATH }}:$PATH"
           export ARCH=arm64
@@ -139,332 +253,211 @@ jobs:
           export KBUILD_BUILD_USER="senx"
           export KBUILD_BUILD_HOST="ubuntu"
           export KBUILD_BUILD_TIMESTAMP="$(TZ=UTC-7 date)"
+          cd kernel_tree
+          make O=out vendor/munch_defconfig
+          make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
           
-          # Create output directory
-          mkdir -p kernel_outputs
-          
-          # Function to build kernel with specific configuration
-          build_kernel_variant() {
-            local kernel_num=$1
-            local variant_name=$2
-            
-            echo "Building Kernel Variant $kernel_num ($variant_name)..."
-            
-            cd kernel_tree
-            
-            # Clean previous build
-            make O=out clean
-            rm -rf out
-            
-            # Apply kernel version changes
-            if [[ "${{ github.event.inputs.CUSTOM_SED }}" != "-FusionX" ]]; then
-              sed -i -e 's/CONFIG_LOCALVERSION="-FusionX"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
+          # Handle OCUV branch - only build the 3 DTBs we need (kernel 1, 2, 5)
+          if [[ "${{ matrix.branch }}" == "OCUV" ]]; then
+            if [[ "${{ matrix.kernel }}" == 1 ]]; then
+              cp out/arch/arm64/boot/Image ../Image
+              mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
+              mv out/arch/arm64/boot/dtb.img ../munch-normal-dtb-ocuv
+            elif [[ "${{ matrix.kernel }}" == 2 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-effcpu-dtb-ocuv
+            elif [[ "${{ matrix.kernel }}" == 5 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-slightuc-dtb-ocuv
             fi
-
-            # Apply LTO configuration if needed
-            if [[ "${{ github.event.inputs.USE_LTO_THIN }}" == "true" ]]; then
-              echo "Changing LTO configuration from FULL to THIN..."
-              sed -i -e '
-              /CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y/c\CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y
-              /CONFIG_HAS_LTO_CLANG=y/c\CONFIG_HAS_LTO_CLANG=y
-              /# CONFIG_LTO_NONE is not set/c\# CONFIG_LTO_NONE is not set
-              /CONFIG_LTO_CLANG_FULL=y/c\# CONFIG_LTO_CLANG_FULL is not set
-              /# CONFIG_LTO_CLANG_THIN is not set/c\CONFIG_LTO_CLANG_THIN=y
-              ' arch/arm64/configs/vendor/munch_defconfig
+          else
+            # Original logic for other branches
+            if [[ "${{ matrix.kernel }}" == 1 ]]; then
+              cp out/arch/arm64/boot/Image ../Image
+              mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
+              mv out/arch/arm64/boot/dtb.img ../munch-normal-dtb
+            elif [[ "${{ matrix.kernel }}" == 2 ]]; then
+              mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
+              mv out/arch/arm64/boot/dtb.img ../munch-effcpu-dtb
+            elif [[ "${{ matrix.kernel }}" == 3 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
+            elif [[ "${{ matrix.kernel }}" == 4 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-effcpu-gpustk-dtb
+            elif [[ "${{ matrix.kernel }}" == 5 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-slightuc-dtb
+            elif [[ "${{ matrix.kernel }}" == 6 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-slightuc-gpustk-dtb
             fi
+          fi
 
-            # Remove cycle count
-            sed -i '/case POWER_SUPPLY_PROP_CYCLE_COUNT:/,/break;/c\
-            \tcase POWER_SUPPLY_PROP_CYCLE_COUNT:\
-            \t#ifdef CONFIG_BATT_VERIFY_BY_DS28E16\
-            \t\tpval->intval = fg->maxim_cycle_count;\
-            \t#else\
-            \t\trc = get_cycle_count(chip->counter, &pval->intval);\
-            \t#endif\
-            \t\tbreak;' drivers/power/supply/qcom/qpnp-fg-gen4.c
-
-            # Apply variant-specific modifications
-            case $kernel_num in
-              1) # Normal kernel
-                ;;
-              2) # EffCPU kernel
-                sed -i -e '/<2553600>,/c\<2553600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<2649600>,/c\//<2649600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<2745600>,/c\//<2745600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<2841600>,/c\//<2841600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<3187200>;/c\//<3187200>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
-                sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
-                ;;
-              3) # Normal GPU Stock
-                patch -p1 -f < "0001-stock-gpu-freq.patch"
-                ;;
-              4) # EffCPU GPU Stock
-                sed -i -e '/<2553600>,/c\<2553600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<2649600>,/c\//<2649600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<2745600>,/c\//<2745600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<2841600>,/c\//<2841600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<3187200>;/c\//<3187200>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
-                sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
-                patch -p1 -f < "0001-stock-gpu-freq.patch"
-                ;;
-              5) # SlightUC kernel
-                sed -i -e '/<2841600>,/c\<2841600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                ;;
-              6) # SlightUC GPU Stock
-                sed -i -e '/<2841600>,/c\<2841600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                patch -p1 -f < "0001-stock-gpu-freq.patch"
-                ;;
-            esac
-
-            # Apply patches for SUSFS and NEXT only
-            if [[ "${{ matrix.branch }}" != "NOKSU" ]]; then
-              bash nextpatch.sh
-            fi
-
-            # Build kernel
-            make O=out vendor/munch_defconfig
-            make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
-
-            # Copy built files to output directory
-            case $kernel_num in
-              1)
-                cp out/arch/arm64/boot/Image ../kernel_outputs/Image
-                cp out/arch/arm64/boot/dtbo.img ../kernel_outputs/munch-aosp-dtbo.img
-                cp out/arch/arm64/boot/dtb.img ../kernel_outputs/munch-normal-dtb
-                ;;
-              2)
-                cp out/arch/arm64/boot/dtbo.img ../kernel_outputs/munch-miui-dtbo.img
-                cp out/arch/arm64/boot/dtb.img ../kernel_outputs/munch-effcpu-dtb
-                ;;
-              3)
-                cp out/arch/arm64/boot/dtb.img ../kernel_outputs/munch-normal-gpustk-dtb
-                ;;
-              4)
-                cp out/arch/arm64/boot/dtb.img ../kernel_outputs/munch-effcpu-gpustk-dtb
-                ;;
-              5)
-                cp out/arch/arm64/boot/dtb.img ../kernel_outputs/munch-slightuc-dtb
-                ;;
-              6)
-                cp out/arch/arm64/boot/dtb.img ../kernel_outputs/munch-slightuc-gpustk-dtb
-                ;;
-            esac
-            
-            cd ..
-            echo "✅ Completed Kernel Variant $kernel_num ($variant_name)"
-          }
-          
-          # Build all variants sequentially
-          build_kernel_variant 1 "Normal"
-          build_kernel_variant 2 "EffCPU" 
-          build_kernel_variant 3 "Normal-GPUStock"
-          build_kernel_variant 4 "EffCPU-GPUStock"
-          build_kernel_variant 5 "SlightUC"
-          build_kernel_variant 6 "SlightUC-GPUStock"
-
-      # Upload all kernel outputs as a single artifact per branch
-      - name: Upload All Kernel Outputs
+      # Upload Image separately (shared across all kernels for each branch)
+      - name: Upload Kernel Base Image
         uses: actions/upload-artifact@v4
+        if: matrix.kernel == 1
         with:
-          name: kernel-outputs-${{ matrix.branch }}
-          path: kernel_outputs/
+          name: kernel-${{ matrix.branch }}-base
+          path: Image
 
-  # Separate job for OCUV - only builds the 3 DTBs we need
-  build_ocuv:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Install Dependencies
-        run: sudo apt install flex libncurses6
-
-      - name: Cache Clang Toolchain
-        id: cache-clang
-        uses: actions/cache@v4
+      # Upload kernel-specific artifacts for regular branches
+      - name: Upload Kernel Artifacts - Kernel 1
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 1 && matrix.branch != 'OCUV'
         with:
+          name: kernel-part-${{ matrix.branch }}-1-addon
           path: |
-            clang-neutron
-            clang-aosp
-          key: clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ hashFiles('**/clang-version') }}
-          restore-keys: |
-            clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-
+            munch-aosp-dtbo.img
+            munch-normal-dtb
 
-      - name: Download & Extract Clang (If not cached)
-        if: steps.cache-clang.outputs.cache-hit != 'true'
-        run: |
-          if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang" ]]; then
-            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
-            mkdir -p clang-aosp
-            tar -xf clang.tar.gz -C clang-aosp
-            echo "aosp-r547379" > clang-version
-          else
-            wget https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst -O clang.tar.zst
-            mkdir -p clang-neutron
-            unzstd -d clang.tar.zst
-            tar -xf clang.tar -C clang-neutron
-            echo "neutron-10032024" > clang-version
-          fi
-
-      - name: Set Clang Path
-        run: |
-          if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang" ]]; then
-            echo "CLANG_PATH=$(pwd)/clang-aosp/bin" >> $GITHUB_ENV
-          else
-            echo "CLANG_PATH=$(pwd)/clang-neutron/bin" >> $GITHUB_ENV
-          fi
-
-      - name: Set OCUV Environment Variables
-        run: |
-          echo "KERNEL_TREE=${{ github.event.inputs.KERNEL_TREE_1 }}" >> $GITHUB_ENV
-          echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_4 }}" >> $GITHUB_ENV
-
-      - name: Checkout Kernel
-        run: |
-          git clone --depth=1 --branch "${{ env.KERNEL_TREE_BRANCH }}" "${{ env.KERNEL_TREE }}" kernel_tree
-
-      # Build only the 3 DTBs needed from OCUV branch
-      - name: Build OCUV DTBs
-        run: |
-          export PATH="${{ env.CLANG_PATH }}:$PATH"
-          export ARCH=arm64
-          export SUBARCH=ARM64
-          export KBUILD_BUILD_USER="senx"
-          export KBUILD_BUILD_HOST="ubuntu"
-          export KBUILD_BUILD_TIMESTAMP="$(TZ=UTC-7 date)"
-          
-          # Create output directory
-          mkdir -p ocuv_dtbs
-          
-          # Function to build OCUV DTB variant
-          build_ocuv_dtb() {
-            local kernel_num=$1
-            local variant_name=$2
-            
-            echo "Building OCUV DTB Variant $kernel_num ($variant_name)..."
-            
-            cd kernel_tree
-            
-            # Clean previous build
-            make O=out clean
-            rm -rf out
-            
-            # Apply kernel version changes
-            if [[ "${{ github.event.inputs.CUSTOM_SED }}" != "-FusionX" ]]; then
-              sed -i -e 's/CONFIG_LOCALVERSION="-FusionX"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
-            fi
-
-            # Apply LTO configuration if needed
-            if [[ "${{ github.event.inputs.USE_LTO_THIN }}" == "true" ]]; then
-              echo "Changing LTO configuration from FULL to THIN..."
-              sed -i -e '
-              /CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y/c\CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y
-              /CONFIG_HAS_LTO_CLANG=y/c\CONFIG_HAS_LTO_CLANG=y
-              /# CONFIG_LTO_NONE is not set/c\# CONFIG_LTO_NONE is not set
-              /CONFIG_LTO_CLANG_FULL=y/c\# CONFIG_LTO_CLANG_FULL is not set
-              /# CONFIG_LTO_CLANG_THIN is not set/c\CONFIG_LTO_CLANG_THIN=y
-              ' arch/arm64/configs/vendor/munch_defconfig
-            fi
-
-            # Remove cycle count
-            sed -i '/case POWER_SUPPLY_PROP_CYCLE_COUNT:/,/break;/c\
-            \tcase POWER_SUPPLY_PROP_CYCLE_COUNT:\
-            \t#ifdef CONFIG_BATT_VERIFY_BY_DS28E16\
-            \t\tpval->intval = fg->maxim_cycle_count;\
-            \t#else\
-            \t\trc = get_cycle_count(chip->counter, &pval->intval);\
-            \t#endif\
-            \t\tbreak;' drivers/power/supply/qcom/qpnp-fg-gen4.c
-
-            # Apply variant-specific modifications (NO GPU PATCH for OCUV)
-            case $kernel_num in
-              1) # Normal kernel
-                ;;
-              2) # EffCPU kernel
-                sed -i -e '/<2553600>,/c\<2553600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<2649600>,/c\//<2649600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<2745600>,/c\//<2745600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<2841600>,/c\//<2841600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<3187200>;/c\//<3187200>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
-                sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
-                ;;
-              5) # SlightUC kernel
-                sed -i -e '/<2841600>,/c\<2841600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                sed -i -e '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-                ;;
-            esac
-
-            # NO PATCHES for OCUV (no nextpatch.sh)
-
-            # Build kernel
-            make O=out vendor/munch_defconfig
-            make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
-
-            # Copy built DTBs to output directory
-            case $kernel_num in
-              1)
-                cp out/arch/arm64/boot/dtb.img ../ocuv_dtbs/munch-normal-dtb-ocuv
-                ;;
-              2)
-                cp out/arch/arm64/boot/dtb.img ../ocuv_dtbs/munch-effcpu-dtb-ocuv
-                ;;
-              5)
-                cp out/arch/arm64/boot/dtb.img ../ocuv_dtbs/munch-slightuc-dtb-ocuv
-                ;;
-            esac
-            
-            cd ..
-            echo "✅ Completed OCUV DTB Variant $kernel_num ($variant_name)"
-          }
-          
-          # Build only the 3 DTBs needed
-          build_ocuv_dtb 1 "Normal-OCUV"
-          build_ocuv_dtb 2 "EffCPU-OCUV" 
-          build_ocuv_dtb 5 "SlightUC-OCUV"
-
-      # Upload OCUV DTBs
-      - name: Upload OCUV DTBs
+      - name: Upload Kernel Artifacts - Kernel 2
         uses: actions/upload-artifact@v4
+        if: matrix.kernel == 2 && matrix.branch != 'OCUV'
         with:
-          name: ocuv-dtbs
-          path: ocuv_dtbs/
+          name: kernel-part-${{ matrix.branch }}-2-addon
+          path: |
+            munch-miui-dtbo.img
+            munch-effcpu-dtb
+
+      - name: Upload Kernel Artifacts - Kernel 3
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 3 && matrix.branch != 'OCUV'
+        with:
+          name: kernel-part-${{ matrix.branch }}-3-addon
+          path: |
+            munch-normal-gpustk-dtb
+
+      - name: Upload Kernel Artifacts - Kernel 4
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 4 && matrix.branch != 'OCUV'
+        with:
+          name: kernel-part-${{ matrix.branch }}-4-addon
+          path: |
+            munch-effcpu-gpustk-dtb
+
+      - name: Upload Kernel Artifacts - Kernel 5
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 5 && matrix.branch != 'OCUV'
+        with:
+          name: kernel-part-${{ matrix.branch }}-5-addon
+          path: |
+            munch-slightuc-dtb
+
+      - name: Upload Kernel Artifacts - Kernel 6
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 6 && matrix.branch != 'OCUV'
+        with:
+          name: kernel-part-${{ matrix.branch }}-6-addon
+          path: |
+            munch-slightuc-gpustk-dtb
+
+      # Upload OCUV DTB artifacts
+      - name: Upload OCUV DTB - Normal
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 1 && matrix.branch == 'OCUV'
+        with:
+          name: ocuv-dtb-normal
+          path: |
+            munch-aosp-dtbo.img
+            munch-normal-dtb-ocuv
+
+      - name: Upload OCUV DTB - EffCPU
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 2 && matrix.branch == 'OCUV'
+        with:
+          name: ocuv-dtb-effcpu
+          path: munch-effcpu-dtb-ocuv
+
+      - name: Upload OCUV DTB - SlightUC
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 5 && matrix.branch == 'OCUV'
+        with:
+          name: ocuv-dtb-slightuc
+          path: munch-slightuc-dtb-ocuv
 
   package_anykernel:
-    needs: [build, build_ocuv]
+    needs: build
     strategy:
       matrix:
         branch: [SUSFS, NEXT, NOKSU]
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download Kernel Outputs
+      - name: Download Kernel Base Image
         uses: actions/download-artifact@v4
         with:
-          name: kernel-outputs-${{ matrix.branch }}
-          path: kernel_outputs
+          name: kernel-${{ matrix.branch }}-base
+          path: kernel-${{ matrix.branch }}-base
 
-      # Download OCUV DTBs to replace the original ones
+      - name: Download Kernel Build Addon 1
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-part-${{ matrix.branch }}-1-addon
+          path: kernel-part-${{ matrix.branch }}-1-addon
+
+      - name: Download Kernel Build Addon 2
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-part-${{ matrix.branch }}-2-addon
+          path: kernel-part-${{ matrix.branch }}-2-addon
+
+      - name: Download Kernel Build Addon 3
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-part-${{ matrix.branch }}-3-addon
+          path: kernel-part-${{ matrix.branch }}-3-addon
+
+      - name: Download Kernel Build Addon 4
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-part-${{ matrix.branch }}-4-addon
+          path: kernel-part-${{ matrix.branch }}-4-addon
+
+      - name: Download Kernel Build Addon 5
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-part-${{ matrix.branch }}-5-addon
+          path: kernel-part-${{ matrix.branch }}-5-addon
+
+      - name: Download Kernel Build Addon 6
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-part-${{ matrix.branch }}-6-addon
+          path: kernel-part-${{ matrix.branch }}-6-addon
+
+      # Download OCUV DTBs
       - name: Download OCUV DTBs
         uses: actions/download-artifact@v4
         with:
-          name: ocuv-dtbs
-          path: ocuv_dtbs
+          name: ocuv-dtb-normal
+          path: ocuv-dtb-normal
+
+      - name: Download OCUV DTB EffCPU
+        uses: actions/download-artifact@v4
+        with:
+          name: ocuv-dtb-effcpu
+          path: ocuv-dtb-effcpu
+
+      - name: Download OCUV DTB SlightUC
+        uses: actions/download-artifact@v4
+        with:
+          name: ocuv-dtb-slightuc
+          path: ocuv-dtb-slightuc
 
       - name: Clone AnyKernel3
         run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b fusionX AnyKernel3-${{ matrix.branch }}
 
       - name: Move Kernel Files to AnyKernel3
         run: |
-          # Move all kernel outputs first
-          mv kernel_outputs/* AnyKernel3-${{ matrix.branch }}/
+          # Move base kernel files
+          mv kernel-${{ matrix.branch }}-base/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-1-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-2-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-3-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-4-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-5-addon/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-part-${{ matrix.branch }}-6-addon/* AnyKernel3-${{ matrix.branch }}/
           
           # Replace specific DTBs with OCUV versions
-          cp ocuv_dtbs/munch-normal-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-normal-dtb
-          cp ocuv_dtbs/munch-effcpu-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-effcpu-dtb
-          cp ocuv_dtbs/munch-slightuc-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-slightuc-dtb
+          cp ocuv-dtb-normal/munch-normal-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-normal-dtb
+          cp ocuv-dtb-effcpu/munch-effcpu-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-effcpu-dtb
+          cp ocuv-dtb-slightuc/munch-slightuc-dtb-ocuv AnyKernel3-${{ matrix.branch }}/munch-slightuc-dtb
 
       - name: Define ZIP Name
         run: |
@@ -505,7 +498,6 @@ jobs:
           KERNEL_TREE_BRANCH_1: ${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}
           KERNEL_TREE_BRANCH_2: ${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}
           KERNEL_TREE_BRANCH_3: ${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}
-          KERNEL_TREE_BRANCH_4: ${{ github.event.inputs.KERNEL_TREE_BRANCH_4 }}
           BUILD_START_TIME: ${{ github.run_started_at }}
           VERSION: ${{ github.event.inputs.VERSION }}
         run: |
