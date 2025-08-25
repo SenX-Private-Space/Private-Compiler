@@ -1,4 +1,4 @@
-name: FusionX-OPTIMIZED
+name: FusionX-OPTIMIZED2
 on:
   pull_request:
   workflow_dispatch:
@@ -223,7 +223,7 @@ jobs:
           sed -i -e '/<2745600>,/c\//<2745600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
           sed -i -e '/<2841600>,/c\//<2841600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
           sed -i -e '/<3187200>;/c\//<3187200>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-          sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
+          sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-ccmd.dtsi
           sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
 
       - name: Build Kernel
@@ -375,20 +375,24 @@ jobs:
       - name: Move Kernel Files to AnyKernel3
         run: |
           # Move base kernel files
-          mv kernel-${{ matrix.branch }}-base/* AnyKernel3-${{ matrix.branch }}/
+          mv kernel-${{ matrix.branch }}-base/Image AnyKernel3-${{ matrix.branch }}/
+          
+          # Move all artifacts from addon folders to AnyKernel3
           mv kernel-part-${{ matrix.branch }}-3-addon/* AnyKernel3-${{ matrix.branch }}/
           mv kernel-part-${{ matrix.branch }}-4-addon/* AnyKernel3-${{ matrix.branch }}/
           mv kernel-part-${{ matrix.branch }}-6-addon/* AnyKernel3-${{ matrix.branch }}/
           
-          # Map the new file structure to the expected names in AnyKernel
-          # kernel 3 artifacts -> normal variants
-          mv AnyKernel3-${{ matrix.branch }}/munch-normal-gpustk-dtb AnyKernel3-${{ matrix.branch }}/munch-normal-dtb
+          # Rename files to match AnyKernel3 expected names
+          cd AnyKernel3-${{ matrix.branch }}
           
-          # kernel 4 artifacts -> effcpu variants  
-          mv AnyKernel3-${{ matrix.branch }}/munch-effcpu-gpustk-dtb AnyKernel3-${{ matrix.branch }}/munch-effcpu-dtb
+          # Rename dtbo files
+          mv munch-aosp-dtbo.img dtbo.img
+          mv munch-miui-dtbo.img miui-dtbo.img
           
-          # kernel 6 artifacts -> slightuc variants
-          mv AnyKernel3-${{ matrix.branch }}/munch-slightuc-gpustk-dtb AnyKernel3-${{ matrix.branch }}/munch-slightuc-dtb
+          # Rename dtb files to keep all variants
+          mv munch-normal-gpustk-dtb normal-gpustk-dtb
+          mv munch-effcpu-gpustk-dtb effcpu-gpustk-dtb
+          mv munch-slightuc-gpustk-dtb slightuc-gpustk-dtb
 
       - name: Define ZIP Name
         run: |
@@ -524,4 +528,3 @@ jobs:
           EOF
 
           python3 send_telegram.py
-        
