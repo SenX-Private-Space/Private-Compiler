@@ -1,7 +1,8 @@
 name: FusionX-OC+UV
-
 on:
   pull_request:
+  workflow_dispatch:
+    inputs:
       KERNEL_TREE_1:
         description: 'Kernel Tree'
         default: 'https://github.com/SenX-Private-Space/FUSIONX-SM8250.git'
