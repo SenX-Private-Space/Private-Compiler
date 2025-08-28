@@ -75,13 +75,10 @@ jobs:
 
           - branch: NOKSU
             kernel: 3
-            build_condition: ${{ github.event.inputs.BUILD_NOKSU == 'yes' }}
           - branch: NOKSU
             kernel: 4
-            build_condition: ${{ github.event.inputs.BUILD_NOKSU == 'yes' }}
           - branch: NOKSU
             kernel: 6
-            build_condition: ${{ github.event.inputs.BUILD_NOKSU == 'yes' }}
 
           - branch: OCUV
             kernel: 1
@@ -307,7 +304,6 @@ jobs:
           - branch: SUSFS
           - branch: NEXT
           - branch: NOKSU
-            condition: ${{ github.event.inputs.BUILD_NOKSU == 'yes' }}
     runs-on: ubuntu-latest
     if: ${{ matrix.branch != 'NOKSU' || github.event.inputs.BUILD_NOKSU == 'yes' }}
 
