@@ -1,4 +1,4 @@
-name: FusionX-TRY
+name: FusionX-ALL-IN-ONE-2
 on:
   pull_request:
   workflow_dispatch:
@@ -7,22 +7,14 @@ on:
         description: 'Kernel Tree'
         default: 'https://github.com/SenX-Private-Space/FUSIONX-SM8250.git'
         required: true
-      KERNEL_TREE_BRANCH_1:
-        description: 'Kernel Tree Branch (SUSFS)'
-        default: 'wip-susfs'
-        required: false
+      BRANCH_TYPE:
+        description: 'Branch Type (applies to SUSFS, NEXT, NOKSU)'
+        default: 'wip'
+        required: true
         type: choice
         options:
-          - stable-susfs
-          - wip-susfs
-      KERNEL_TREE_BRANCH_2:
-        description: 'Kernel Tree Branch (NEXT)'
-        default: 'wip-next'
-        required: false
-        type: choice
-        options:
-          - stable-next
-          - wip-next
+          - stable
+          - wip
       BUILD_NOKSU:
         description: 'Build NOKSU variant?'
         default: 'yes'
@@ -31,14 +23,6 @@ on:
         options:
           - 'yes'
           - 'no'
-      KERNEL_TREE_BRANCH_3:
-        description: 'Kernel Tree Branch (NOKSU)'
-        default: 'wip-noksu'
-        required: false
-        type: choice
-        options:
-          - stable-noksu
-          - wip-noksu
       KERNEL_TREE_BRANCH_4:
         description: 'Kernel Tree Branch (OCUV)'
         default: 'ocuv'
@@ -154,11 +138,11 @@ jobs:
         run: |
           echo "KERNEL_TREE=${{ github.event.inputs.KERNEL_TREE_1 }}" >> $GITHUB_ENV
           case "${{ matrix.branch }}" in
-            SUSFS) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}" >> $GITHUB_ENV
+            SUSFS) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.BRANCH_TYPE }}-susfs" >> $GITHUB_ENV
                    echo "BRANCH_NAME=SUSFS" >> $GITHUB_ENV ;;
-            NEXT) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}" >> $GITHUB_ENV
+            NEXT) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.BRANCH_TYPE }}-next" >> $GITHUB_ENV
                   echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV ;;
-            NOKSU) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}" >> $GITHUB_ENV
+            NOKSU) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.BRANCH_TYPE }}-noksu" >> $GITHUB_ENV
                    echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV ;;
             OCUV) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_4 }}" >> $GITHUB_ENV
                   echo "BRANCH_NAME=OCUV" >> $GITHUB_ENV ;;
@@ -411,9 +395,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CLANG_TOOLCHAIN: ${{ github.event.inputs.CLANG_TOOLCHAIN }}
           LTO_CONFIG: ${{ github.event.inputs.USE_LTO_THIN }}
-          KERNEL_TREE_BRANCH_1: ${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}
-          KERNEL_TREE_BRANCH_2: ${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}
-          KERNEL_TREE_BRANCH_3: ${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}
+          BRANCH_TYPE: ${{ github.event.inputs.BRANCH_TYPE }}
           BUILD_NOKSU: ${{ github.event.inputs.BUILD_NOKSU }}
           BUILD_START_TIME: ${{ github.run_started_at }}
           VERSION: ${{ github.event.inputs.VERSION }}
@@ -448,6 +430,8 @@ jobs:
           chat_id = os.environ.get('TELEGRAM_CHAT_ID')
           clang = os.environ.get('CLANG_TOOLCHAIN', 'aosp')
           lto = 'THIN' if os.environ.get('LTO_CONFIG') == 'true' else 'FULL'
+          branch_type = os.environ.get('BRANCH_TYPE', 'wip')
+          noksu_status = os.environ.get('BUILD_NOKSU', 'no')
           build_start_time = os.environ.get('BUILD_START_TIME')
           version = os.environ.get('VERSION', '2.x')
           manila_tz = timezone(timedelta(hours=8))
@@ -466,17 +450,17 @@ jobs:
               file_name = os.path.basename(zip_file)
               
               if "SUSFS" in file_name:
-                  branch_info = os.environ.get('KERNEL_TREE_BRANCH_1', 'susfs1')
+                  branch_info = f"{branch_type}-susfs"
                   build_type = "SUSFS"
               elif "NEXT" in file_name:
-                  branch_info = os.environ.get('KERNEL_TREE_BRANCH_2', 'next1')
+                  branch_info = f"{branch_type}-next"
                   build_type = "NEXT"
               elif "NOKSU" in file_name:
-                  branch_info = os.environ.get('KERNEL_TREE_BRANCH_3', 'noksu1')
+                  branch_info = f"{branch_type}-noksu"
                   build_type = "NOKSU"
               else:
-                  branch_info = "unknown"
-                  build_type = "Unknown"
+                  branch_info = "ocuv"
+                  build_type = "OCUV"
               
               caption = f"""<pre>
             <b> FusionX Build Complete! </b>
@@ -487,6 +471,7 @@ jobs:
             <b> Lto:</b>         {lto}
             <b> Clang:</b>       {clang}
             <b> Build Type:</b>  {build_type}
+            <b> NOKSU Built:</b>  {noksu_status.upper()}
             ==============================
             </pre>"""
               
