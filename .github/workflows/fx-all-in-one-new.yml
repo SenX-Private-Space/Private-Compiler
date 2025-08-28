@@ -1,13 +1,8 @@
-
-name: FusionX-ALL-IN-ONE
-
+name: FusionX-ALL-IN-ONE-2
 on:
   pull_request:
   workflow_dispatch:
     inputs:
-      BUILD_TITLE:
-        description: 'Custom Build Title'
-        required: false
       KERNEL_TREE_1:
         description: 'Kernel Tree'
         default: 'https://github.com/SenX-Private-Space/FUSIONX-SM8250.git'
@@ -36,6 +31,10 @@ on:
         options:
           - stable-noksu
           - wip-noksu
+      KERNEL_TREE_BRANCH_4:
+        description: 'Kernel Tree Branch (OCUV)'
+        default: 'ocuv'
+        required: false
       VERSION:
         description: 'Zip Version'
         default: '2.x'
@@ -66,8 +65,36 @@ jobs:
   build:
     strategy:
       matrix:
-        kernel: [1, 2, 3, 4, 5, 6]
-        branch: [SUSFS, NEXT, NOKSU] 
+        include:
+
+          - branch: SUSFS
+            kernel: 3
+          - branch: SUSFS
+            kernel: 4
+          - branch: SUSFS
+            kernel: 6
+
+          - branch: NEXT
+            kernel: 3
+          - branch: NEXT
+            kernel: 4
+          - branch: NEXT
+            kernel: 6
+
+          - branch: NOKSU
+            kernel: 3
+          - branch: NOKSU
+            kernel: 4
+          - branch: NOKSU
+            kernel: 6
+
+          - branch: OCUV
+            kernel: 1
+          - branch: OCUV
+            kernel: 2
+          - branch: OCUV
+            kernel: 5
+
     runs-on: ubuntu-latest
     env:
       UPLOAD_TO_RELEASE: false
@@ -121,6 +148,8 @@ jobs:
                   echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV ;;
             NOKSU) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}" >> $GITHUB_ENV
                    echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV ;;
+            OCUV) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_4 }}" >> $GITHUB_ENV
+                  echo "BRANCH_NAME=OCUV" >> $GITHUB_ENV ;;
           esac
 
       - name: Checkout Kernel
@@ -167,13 +196,13 @@ jobs:
           sed -i -e '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
 
       - name: Revert to stock gpufreq
-        if: matrix.kernel == 3 || matrix.kernel == 4 || matrix.kernel == 6
+        if: (matrix.kernel == 3 || matrix.kernel == 4 || matrix.kernel == 6) && matrix.branch != 'OCUV'
         run: |
           cd kernel_tree
           patch -p1 -f < "0001-stock-gpu-freq.patch"
 
       - name: Apply Patches (SUSFS and NEXT only)
-        if: matrix.branch != 'NOKSU'
+        if: matrix.branch != 'NOKSU' && matrix.branch != 'OCUV'
         run: |
           cd kernel_tree
           bash nextpatch.sh
@@ -201,79 +230,76 @@ jobs:
           cd kernel_tree
           make O=out vendor/munch_defconfig
           make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
-          if [[ "${{ matrix.kernel }}" == 1 ]]; then
-            cp out/arch/arm64/boot/Image ../Image
-            mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
-            mv out/arch/arm64/boot/dtb.img ../munch-normal-dtb
-          elif [[ "${{ matrix.kernel }}" == 2 ]]; then
-            mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
-            mv out/arch/arm64/boot/dtb.img ../munch-effcpu-dtb
-          elif [[ "${{ matrix.kernel }}" == 3 ]]; then
-            mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
-          elif [[ "${{ matrix.kernel }}" == 4 ]]; then
-            mv out/arch/arm64/boot/dtb.img ../munch-effcpu-gpustk-dtb
-          elif [[ "${{ matrix.kernel }}" == 5 ]]; then
-            mv out/arch/arm64/boot/dtb.img ../munch-slightuc-dtb
-          elif [[ "${{ matrix.kernel }}" == 6 ]]; then
-            mv out/arch/arm64/boot/dtb.img ../munch-slightuc-gpustk-dtb
+          
+          if [[ "${{ matrix.branch }}" == "OCUV" ]]; then
+            if [[ "${{ matrix.kernel }}" == 1 ]]; then
+              mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
+              mv out/arch/arm64/boot/dtb.img ../munch-normal-dtb
+            elif [[ "${{ matrix.kernel }}" == 2 ]]; then
+              mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
+              mv out/arch/arm64/boot/dtb.img ../munch-effcpu-dtb
+            elif [[ "${{ matrix.kernel }}" == 5 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-slightuc-dtb
+            fi
+          else
+            if [[ "${{ matrix.kernel }}" == 3 ]]; then
+              cp out/arch/arm64/boot/Image ../Image
+              mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
+            elif [[ "${{ matrix.kernel }}" == 4 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-effcpu-gpustk-dtb
+            elif [[ "${{ matrix.kernel }}" == 6 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-slightuc-gpustk-dtb
+            fi
           fi
 
-      # Upload Image separately (shared across all kernels for each branch)
-      - name: Upload Kernel Base Image
+      - name: Upload OCUV Kernel 1 Components
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 1
+        if: matrix.kernel == 1 && matrix.branch == 'OCUV'
         with:
-          name: kernel-${{ matrix.branch }}-base
-          path: Image
-
-      # Upload kernel-specific artifacts
-      - name: Upload Kernel Artifacts - Kernel 1
-        uses: actions/upload-artifact@v4
-        if: matrix.kernel == 1
-        with:
-          name: kernel-part-${{ matrix.branch }}-1-addon
+          name: ocuv-kernel-1-components
           path: |
             munch-aosp-dtbo.img
             munch-normal-dtb
 
-      - name: Upload Kernel Artifacts - Kernel 2
+      - name: Upload OCUV Kernel 2 Components
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 2
+        if: matrix.kernel == 2 && matrix.branch == 'OCUV'
         with:
-          name: kernel-part-${{ matrix.branch }}-2-addon
+          name: ocuv-kernel-2-components
           path: |
             munch-miui-dtbo.img
             munch-effcpu-dtb
 
-      - name: Upload Kernel Artifacts - Kernel 3
+      - name: Upload OCUV Kernel 5 Components
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 3
+        if: matrix.kernel == 5 && matrix.branch == 'OCUV'
         with:
-          name: kernel-part-${{ matrix.branch }}-3-addon
-          path: |
-            munch-normal-gpustk-dtb
-
-      - name: Upload Kernel Artifacts - Kernel 4
-        uses: actions/upload-artifact@v4
-        if: matrix.kernel == 4
-        with:
-          name: kernel-part-${{ matrix.branch }}-4-addon
-          path: |
-            munch-effcpu-gpustk-dtb
-
-      - name: Upload Kernel Artifacts - Kernel 5
-        uses: actions/upload-artifact@v4
-        if: matrix.kernel == 5
-        with:
-          name: kernel-part-${{ matrix.branch }}-5-addon
+          name: ocuv-kernel-5-components
           path: |
             munch-slightuc-dtb
 
-      - name: Upload Kernel Artifacts - Kernel 6
+      - name: Upload Branch Kernel 3 (with Image)
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 6
+        if: matrix.kernel == 3 && matrix.branch != 'OCUV'
         with:
-          name: kernel-part-${{ matrix.branch }}-6-addon
+          name: kernel-${{ matrix.branch }}-3-base
+          path: |
+            Image
+            munch-normal-gpustk-dtb
+
+      - name: Upload Branch Kernel 4
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 4 && matrix.branch != 'OCUV'
+        with:
+          name: kernel-${{ matrix.branch }}-4
+          path: |
+            munch-effcpu-gpustk-dtb
+
+      - name: Upload Branch Kernel 6
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 6 && matrix.branch != 'OCUV'
+        with:
+          name: kernel-${{ matrix.branch }}-6
           path: |
             munch-slightuc-gpustk-dtb
 
@@ -285,64 +311,56 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download Kernel Base Image
+      - name: Download OCUV Kernel 1 Components
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-base
-          path: kernel-${{ matrix.branch }}-base
+          name: ocuv-kernel-1-components
+          path: ocuv-kernel-1
 
-      - name: Download Kernel Build Addon 1
+      - name: Download OCUV Kernel 2 Components
         uses: actions/download-artifact@v4
         with:
-          name: kernel-part-${{ matrix.branch }}-1-addon
-          path: kernel-part-${{ matrix.branch }}-1-addon
+          name: ocuv-kernel-2-components
+          path: ocuv-kernel-2
 
-      - name: Download Kernel Build Addon 2
+      - name: Download OCUV Kernel 5 Components
         uses: actions/download-artifact@v4
         with:
-          name: kernel-part-${{ matrix.branch }}-2-addon
-          path: kernel-part-${{ matrix.branch }}-2-addon
+          name: ocuv-kernel-5-components
+          path: ocuv-kernel-5
 
-      - name: Download Kernel Build Addon 3
+      - name: Download Branch Kernel 3 (with Image)
         uses: actions/download-artifact@v4
         with:
-          name: kernel-part-${{ matrix.branch }}-3-addon
-          path: kernel-part-${{ matrix.branch }}-3-addon
+          name: kernel-${{ matrix.branch }}-3-base
+          path: branch-kernel-3
 
-      - name: Download Kernel Build Addon 4
+      - name: Download Branch Kernel 4
         uses: actions/download-artifact@v4
         with:
-          name: kernel-part-${{ matrix.branch }}-4-addon
-          path: kernel-part-${{ matrix.branch }}-4-addon
+          name: kernel-${{ matrix.branch }}-4
+          path: branch-kernel-4
 
-      - name: Download Kernel Build Addon 5
+      - name: Download Branch Kernel 6
         uses: actions/download-artifact@v4
         with:
-          name: kernel-part-${{ matrix.branch }}-5-addon
-          path: kernel-part-${{ matrix.branch }}-5-addon
-
-      - name: Download Kernel Build Addon 6
-        uses: actions/download-artifact@v4
-        with:
-          name: kernel-part-${{ matrix.branch }}-6-addon
-          path: kernel-part-${{ matrix.branch }}-6-addon
+          name: kernel-${{ matrix.branch }}-6
+          path: branch-kernel-6
 
       - name: Clone AnyKernel3
         run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b fusionX AnyKernel3-${{ matrix.branch }}
 
-      - name: Move Kernel Files to AnyKernel3
+      - name: Combine All Kernel Components
         run: |
-          mv kernel-${{ matrix.branch }}-base/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-part-${{ matrix.branch }}-1-addon/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-part-${{ matrix.branch }}-2-addon/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-part-${{ matrix.branch }}-3-addon/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-part-${{ matrix.branch }}-4-addon/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-part-${{ matrix.branch }}-5-addon/* AnyKernel3-${{ matrix.branch }}/
-          mv kernel-part-${{ matrix.branch }}-6-addon/* AnyKernel3-${{ matrix.branch }}/
+          cp branch-kernel-3/* AnyKernel3-${{ matrix.branch }}/
+          cp ocuv-kernel-1/* AnyKernel3-${{ matrix.branch }}/
+          cp ocuv-kernel-2/* AnyKernel3-${{ matrix.branch }}/
+          cp ocuv-kernel-5/* AnyKernel3-${{ matrix.branch }}/
+          cp branch-kernel-4/* AnyKernel3-${{ matrix.branch }}/
+          cp branch-kernel-6/* AnyKernel3-${{ matrix.branch }}/
 
       - name: Define ZIP Name
         run: |
-          # Set Manila timezone and get date
           export TZ='Asia/Manila'
           COMPILED_DATE=$(date +%Y%m%d)
           echo "ZIP_NAME=[FusionX-${{ matrix.branch }}]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
@@ -408,20 +426,14 @@ jobs:
                   'parse_mode': 'HTML'
               }
               return requests.post(url, data=data).json()
-
-          # Environment variables
           bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
           chat_id = os.environ.get('TELEGRAM_CHAT_ID')
           clang = os.environ.get('CLANG_TOOLCHAIN', 'aosp')
           lto = 'THIN' if os.environ.get('LTO_CONFIG') == 'true' else 'FULL'
           build_start_time = os.environ.get('BUILD_START_TIME')
           version = os.environ.get('VERSION', '2.x')
-          
-          # Get Manila timezone build date
           manila_tz = timezone(timedelta(hours=8))
           build_date = datetime.now(manila_tz).strftime('%Y-%m-%d %H:%M:%S')
-          
-          # Find ZIP files
           zip_files = glob.glob('artifacts/**/*.zip', recursive=True)
           
           if not bot_token or not chat_id:
@@ -432,11 +444,9 @@ jobs:
               send_telegram_message(bot_token, chat_id, "❌ <b>Build Failed!</b>")
               exit(1)
 
-          # Send each file with combined message
           for zip_file in zip_files:
               file_name = os.path.basename(zip_file)
               
-              # Extract branch info from filename and get actual branch name
               if "SUSFS" in file_name:
                   branch_info = os.environ.get('KERNEL_TREE_BRANCH_1', 'susfs1')
                   build_type = "SUSFS"
