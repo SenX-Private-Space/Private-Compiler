@@ -171,15 +171,6 @@ jobs:
             sed -i -e 's/CONFIG_LOCALVERSION="-FusionX"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
           fi
 
-      - name: Configure KPM for SUSFS and NEXT
-        if: ${{ env.ENABLE_KPM_FOR_BRANCH == 'true' }}
-        run: |
-          cd kernel_tree
-          echo "Enabling KPM configuration for ${{ matrix.branch }}..."
-          echo "CONFIG_KALLSYMS=y" >> "arch/arm64/configs/vendor/munch_defconfig"
-          echo "CONFIG_KALLSYMS_ALL=y" >> "arch/arm64/configs/vendor/munch_defconfig"
-          echo "CONFIG_KPM=y" >> "arch/arm64/configs/vendor/munch_defconfig"
-
       - name: Change LTO Configuration to THIN
         if: ${{ github.event.inputs.USE_LTO_THIN == 'true' }}
         run: |
