@@ -1,11 +1,11 @@
-name: FusionX-ALL3
+name: FusionX-ALL-IN-ONE-2
 on:
   pull_request:
   workflow_dispatch:
     inputs:
       KERNEL_TREE_1:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenX-Private-Space/FUSIONX-SM8250.git'
+        default: 'https://github.com/SenseiiX/fusionX_sm8250.git'
         required: true
       KERNEL_TREE_BRANCH_1:
         description: 'Kernel Tree Branch (SUSFS)'
@@ -49,8 +49,8 @@ on:
         required: true
         type: choice
         options:
-        - neutron
-        - aosp clang
+          - neutron
+          - aosp clang
       USE_LTO_THIN:
         description: 'Use LTO THIN instead of FULL'
         default: 'false'
@@ -61,45 +61,81 @@ jobs:
   build:
     strategy:
       matrix:
-        branch: [SUSFS, NEXT, NOKSU, OCUV]
-        kernel: [1, 2, 3, 4, 5, 6]
-        exclude:
+        include:
+          # OCUV builds - kernels 1, 2, 5
           - branch: OCUV
+            kernel: 1
+          - branch: OCUV
+            kernel: 2
+          - branch: OCUV
+            kernel: 5
+          
+          # SUSFS builds - kernels 3, 4, 6 (conditional based on BUILD_TYPE)
+          - branch: SUSFS
             kernel: 3
-          - branch: OCUV
+            build_condition: always
+          - branch: SUSFS
             kernel: 4
-          - branch: OCUV
+            build_condition: always
+          - branch: SUSFS
             kernel: 6
-          - branch: SUSFS
-            kernel: 1
-          - branch: SUSFS
-            kernel: 2
-          - branch: SUSFS
-            kernel: 5
+            build_condition: always
+          
+          # NEXT builds - kernels 3, 4, 6 (conditional based on BUILD_TYPE)
           - branch: NEXT
-            kernel: 1
+            kernel: 3
+            build_condition: always
           - branch: NEXT
-            kernel: 2
+            kernel: 4
+            build_condition: always
           - branch: NEXT
-            kernel: 5
+            kernel: 6
+            build_condition: always
+          
+          # NOKSU builds - kernels 3, 4, 6 (stable only)
           - branch: NOKSU
-            kernel: 1
+            kernel: 3
+            build_condition: stable_only
           - branch: NOKSU
-            kernel: 2
+            kernel: 4
+            build_condition: stable_only
           - branch: NOKSU
-            kernel: 5
+            kernel: 6
+            build_condition: stable_only
 
     runs-on: ubuntu-latest
     env:
       UPLOAD_TO_RELEASE: false
 
-    if: matrix.branch == 'OCUV' || (github.event.inputs.BUILD_TYPE == 'stable' && (matrix.branch == 'SUSFS' || matrix.branch == 'NEXT' || matrix.branch == 'NOKSU')) || (github.event.inputs.BUILD_TYPE == 'wip' && (matrix.branch == 'SUSFS' || matrix.branch == 'NEXT'))
-
     steps:
+      - name: Check Build Condition
+        id: check_build
+        run: |
+          BUILD_TYPE="${{ github.event.inputs.BUILD_TYPE }}"
+          BRANCH="${{ matrix.branch }}"
+          BUILD_CONDITION="${{ matrix.build_condition }}"
+          
+          # OCUV always builds
+          if [[ "$BRANCH" == "OCUV" ]]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # For other branches, check conditions
+          if [[ "$BUILD_CONDITION" == "stable_only" && "$BUILD_TYPE" != "stable" ]]; then
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          elif [[ "$BUILD_CONDITION" == "wip_only" && "$BUILD_TYPE" != "wip" ]]; then
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Install Dependencies
+        if: steps.check_build.outputs.should_build == 'true'
         run: sudo apt install flex libncurses6
 
       - name: Cache Clang Toolchain
+        if: steps.check_build.outputs.should_build == 'true'
         id: cache-clang
         uses: actions/cache@v4
         with:
@@ -111,7 +147,7 @@ jobs:
             clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-
 
       - name: Download & Extract Clang (If not cached)
-        if: steps.cache-clang.outputs.cache-hit != 'true'
+        if: steps.check_build.outputs.should_build == 'true' && steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang" ]]; then
             wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
@@ -127,6 +163,7 @@ jobs:
           fi
 
       - name: Set Clang Path
+        if: steps.check_build.outputs.should_build == 'true'
         run: |
           if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang" ]]; then
             echo "CLANG_PATH=$(pwd)/clang-aosp/bin" >> $GITHUB_ENV
@@ -135,6 +172,7 @@ jobs:
           fi
 
       - name: Set Kernel Environment Variables
+        if: steps.check_build.outputs.should_build == 'true'
         run: |
           echo "KERNEL_TREE=${{ github.event.inputs.KERNEL_TREE_1 }}" >> $GITHUB_ENV
           case "${{ matrix.branch }}" in
@@ -161,10 +199,12 @@ jobs:
           esac
 
       - name: Checkout Kernel
+        if: steps.check_build.outputs.should_build == 'true'
         run: |
           git clone --depth=1 --branch "${{ env.KERNEL_TREE_BRANCH }}" "${{ env.KERNEL_TREE }}" kernel_tree
 
       - name: Kernel Version
+        if: steps.check_build.outputs.should_build == 'true'
         run: |
           cd kernel_tree
           if [[ "${{ github.event.inputs.CUSTOM_SED }}" != "-FusionX" ]]; then
@@ -172,7 +212,7 @@ jobs:
           fi
 
       - name: Change LTO Configuration to THIN
-        if: ${{ github.event.inputs.USE_LTO_THIN == 'true' }}
+        if: steps.check_build.outputs.should_build == 'true' && github.event.inputs.USE_LTO_THIN == 'true'
         run: |
           cd kernel_tree
           echo "Changing LTO configuration from FULL to THIN..."
@@ -185,6 +225,7 @@ jobs:
           ' arch/arm64/configs/vendor/munch_defconfig
 
       - name: Remove cycle count
+        if: steps.check_build.outputs.should_build == 'true'
         run: |
           cd kernel_tree
           sed -i '/case POWER_SUPPLY_PROP_CYCLE_COUNT:/,/break;/c\
@@ -197,26 +238,26 @@ jobs:
           \t\tbreak;' drivers/power/supply/qcom/qpnp-fg-gen4.c
 
       - name: Apply Modifications (if swift build)
-        if: matrix.kernel == 5 || matrix.kernel == 6
+        if: steps.check_build.outputs.should_build == 'true' && (matrix.kernel == 5 || matrix.kernel == 6)
         run: |
           cd kernel_tree
           sed -i -e '/<2841600>,/c\<2841600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
           sed -i -e '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
 
       - name: Revert to stock gpufreq
-        if: (matrix.kernel == 3 || matrix.kernel == 4 || matrix.kernel == 6) && matrix.branch != 'OCUV'
+        if: steps.check_build.outputs.should_build == 'true' && (matrix.kernel == 3 || matrix.kernel == 4 || matrix.kernel == 6) && matrix.branch != 'OCUV'
         run: |
           cd kernel_tree
           patch -p1 -f < "0001-stock-gpu-freq.patch"
 
       - name: Apply Patches (SUSFS and NEXT only)
-        if: matrix.branch != 'NOKSU' && matrix.branch != 'OCUV'
+        if: steps.check_build.outputs.should_build == 'true' && matrix.branch != 'NOKSU' && matrix.branch != 'OCUV'
         run: |
           cd kernel_tree
           bash nextpatch.sh
 
       - name: Apply Modifications (if modified build)
-        if: matrix.kernel == 2 || matrix.kernel == 4
+        if: steps.check_build.outputs.should_build == 'true' && (matrix.kernel == 2 || matrix.kernel == 4)
         run: |
           cd kernel_tree
           sed -i -e '/<2553600>,/c\<2553600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
@@ -228,6 +269,7 @@ jobs:
           sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
 
       - name: Build Kernel
+        if: steps.check_build.outputs.should_build == 'true'
         run: |
           export PATH="${{ env.CLANG_PATH }}:$PATH"
           export ARCH=arm64
@@ -262,7 +304,7 @@ jobs:
 
       - name: Upload OCUV Kernel 1 Components
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 1 && matrix.branch == 'OCUV'
+        if: steps.check_build.outputs.should_build == 'true' && matrix.kernel == 1 && matrix.branch == 'OCUV'
         with:
           name: ocuv-kernel-1-components
           path: |
@@ -271,7 +313,7 @@ jobs:
 
       - name: Upload OCUV Kernel 2 Components
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 2 && matrix.branch == 'OCUV'
+        if: steps.check_build.outputs.should_build == 'true' && matrix.kernel == 2 && matrix.branch == 'OCUV'
         with:
           name: ocuv-kernel-2-components
           path: |
@@ -280,7 +322,7 @@ jobs:
 
       - name: Upload OCUV Kernel 5 Components
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 5 && matrix.branch == 'OCUV'
+        if: steps.check_build.outputs.should_build == 'true' && matrix.kernel == 5 && matrix.branch == 'OCUV'
         with:
           name: ocuv-kernel-5-components
           path: |
@@ -288,7 +330,7 @@ jobs:
 
       - name: Upload Branch Kernel 3 (with Image)
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 3 && matrix.branch != 'OCUV'
+        if: steps.check_build.outputs.should_build == 'true' && matrix.kernel == 3 && matrix.branch != 'OCUV'
         with:
           name: kernel-${{ matrix.branch }}-3-base
           path: |
@@ -297,7 +339,7 @@ jobs:
 
       - name: Upload Branch Kernel 4
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 4 && matrix.branch != 'OCUV'
+        if: steps.check_build.outputs.should_build == 'true' && matrix.kernel == 4 && matrix.branch != 'OCUV'
         with:
           name: kernel-${{ matrix.branch }}-4
           path: |
@@ -305,7 +347,7 @@ jobs:
 
       - name: Upload Branch Kernel 6
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 6 && matrix.branch != 'OCUV'
+        if: steps.check_build.outputs.should_build == 'true' && matrix.kernel == 6 && matrix.branch != 'OCUV'
         with:
           name: kernel-${{ matrix.branch }}-6
           path: |
@@ -317,49 +359,71 @@ jobs:
     strategy:
       matrix:
         branch: [SUSFS, NEXT, NOKSU]
-    if: (github.event.inputs.BUILD_TYPE == 'stable') || (github.event.inputs.BUILD_TYPE == 'wip' && matrix.branch != 'NOKSU')
 
     steps:
+      - name: Check Package Condition
+        id: check_package
+        run: |
+          BUILD_TYPE="${{ github.event.inputs.BUILD_TYPE }}"
+          BRANCH="${{ matrix.branch }}"
+          
+          # Skip NOKSU for wip builds, include all for stable builds
+          if [[ "$BUILD_TYPE" == "stable" ]]; then
+            echo "should_package=true" >> $GITHUB_OUTPUT
+          elif [[ "$BUILD_TYPE" == "wip" && "$BRANCH" != "NOKSU" ]]; then
+            echo "should_package=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_package=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Download OCUV Kernel 1 Components
+        if: steps.check_package.outputs.should_package == 'true'
         uses: actions/download-artifact@v4
         with:
           name: ocuv-kernel-1-components
           path: ocuv-kernel-1
 
       - name: Download OCUV Kernel 2 Components
+        if: steps.check_package.outputs.should_package == 'true'
         uses: actions/download-artifact@v4
         with:
           name: ocuv-kernel-2-components
           path: ocuv-kernel-2
 
       - name: Download OCUV Kernel 5 Components
+        if: steps.check_package.outputs.should_package == 'true'
         uses: actions/download-artifact@v4
         with:
           name: ocuv-kernel-5-components
           path: ocuv-kernel-5
 
       - name: Download Branch Kernel 3 (with Image)
+        if: steps.check_package.outputs.should_package == 'true'
         uses: actions/download-artifact@v4
         with:
           name: kernel-${{ matrix.branch }}-3-base
           path: branch-kernel-3
 
       - name: Download Branch Kernel 4
+        if: steps.check_package.outputs.should_package == 'true'
         uses: actions/download-artifact@v4
         with:
           name: kernel-${{ matrix.branch }}-4
           path: branch-kernel-4
 
       - name: Download Branch Kernel 6
+        if: steps.check_package.outputs.should_package == 'true'
         uses: actions/download-artifact@v4
         with:
           name: kernel-${{ matrix.branch }}-6
           path: branch-kernel-6
 
       - name: Clone AnyKernel3
+        if: steps.check_package.outputs.should_package == 'true'
         run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b fusionX AnyKernel3-${{ matrix.branch }}
 
       - name: Combine All Kernel Components
+        if: steps.check_package.outputs.should_package == 'true'
         run: |
           cp branch-kernel-3/* AnyKernel3-${{ matrix.branch }}/
           cp ocuv-kernel-1/* AnyKernel3-${{ matrix.branch }}/
@@ -369,6 +433,7 @@ jobs:
           cp branch-kernel-6/* AnyKernel3-${{ matrix.branch }}/
 
       - name: Define ZIP Name
+        if: steps.check_package.outputs.should_package == 'true'
         run: |
           export TZ='Asia/Manila'
           COMPILED_DATE=$(date +%Y%m%d)
@@ -376,11 +441,13 @@ jobs:
           echo "KERNEL_TYPE=${{ matrix.branch }}" >> $GITHUB_ENV
 
       - name: Create ZIP file
+        if: steps.check_package.outputs.should_package == 'true'
         run: |
           cd AnyKernel3-${{ matrix.branch }}
           zip -r9 ../${{ env.ZIP_NAME }}.zip * -x .git* .github*
 
       - name: Upload Flashable Kernel Zip
+        if: steps.check_package.outputs.should_package == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ZIP_NAME }}
