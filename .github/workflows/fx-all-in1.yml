@@ -93,11 +93,7 @@ jobs:
     env:
       UPLOAD_TO_RELEASE: false
 
-    # Skip builds based on BUILD_TYPE
-    if: |
-      matrix.branch == 'OCUV' || 
-      (github.event.inputs.BUILD_TYPE == 'stable' && (matrix.branch == 'SUSFS' || matrix.branch == 'NEXT' || matrix.branch == 'NOKSU')) ||
-      (github.event.inputs.BUILD_TYPE == 'wip' && (matrix.branch == 'SUSFS' || matrix.branch == 'NEXT'))
+    if: matrix.branch == 'OCUV' || (github.event.inputs.BUILD_TYPE == 'stable' && (matrix.branch == 'SUSFS' || matrix.branch == 'NEXT' || matrix.branch == 'NOKSU')) || (github.event.inputs.BUILD_TYPE == 'wip' && (matrix.branch == 'SUSFS' || matrix.branch == 'NEXT'))
 
     steps:
       - name: Install Dependencies
