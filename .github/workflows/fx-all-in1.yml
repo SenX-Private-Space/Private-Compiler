@@ -317,10 +317,7 @@ jobs:
     strategy:
       matrix:
         branch: [SUSFS, NEXT, NOKSU]
-    # Skip NOKSU for wip builds, include all for stable builds
-    if: |
-      (github.event.inputs.BUILD_TYPE == 'stable') ||
-      (github.event.inputs.BUILD_TYPE == 'wip' && matrix.branch != 'NOKSU')
+    if: (github.event.inputs.BUILD_TYPE == 'stable') || (github.event.inputs.BUILD_TYPE == 'wip' && matrix.branch != 'NOKSU')
 
     steps:
       - name: Download OCUV Kernel 1 Components
