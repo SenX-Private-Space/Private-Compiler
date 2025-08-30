@@ -1,13 +1,13 @@
-name: FusionX-KPM
+name: FusionX-ALL3
 on:
   pull_request:
   workflow_dispatch:
     inputs:
-      KERNEL_TREE:
+      KERNEL_TREE_1:
         description: 'Kernel Tree'
         default: 'https://github.com/SenX-Private-Space/FUSIONX-SM8250.git'
         required: true
-      KERNEL_TREE_BRANCH_SUSFS:
+      KERNEL_TREE_BRANCH_1:
         description: 'Kernel Tree Branch (SUSFS)'
         default: 'wip-susfs'
         required: false
@@ -15,7 +15,7 @@ on:
         options:
           - stable-susfs
           - wip-susfs
-      KERNEL_TREE_BRANCH_NEXT:
+      KERNEL_TREE_BRANCH_2:
         description: 'Kernel Tree Branch (NEXT)'
         default: 'wip-next'
         required: false
@@ -23,11 +23,14 @@ on:
         options:
           - stable-next
           - wip-next
-      ENABLE_KPM:
-        description: 'Enable KPM patch for SUSFS and NEXT'
-        default: 'false'
-        required: false
-        type: boolean
+      BUILD_TYPE:
+        description: 'Build Type'
+        default: 'wip'
+        required: true
+        type: choice
+        options:
+          - stable
+          - wip
       VERSION:
         description: 'Zip Version'
         default: '2.x'
@@ -58,42 +61,43 @@ jobs:
   build:
     strategy:
       matrix:
-        include:
-          # SUSFS builds
-          - branch: SUSFS
-            kernel: 3
-          - branch: SUSFS
-            kernel: 4
-          - branch: SUSFS
-            kernel: 6
-
-          # NEXT builds
-          - branch: NEXT
-            kernel: 3
-          - branch: NEXT
-            kernel: 4
-          - branch: NEXT
-            kernel: 6
-
-          # NOKSU builds (automatic, no dispatch input needed)
-          - branch: NOKSU
-            kernel: 3
-          - branch: NOKSU
-            kernel: 4
-          - branch: NOKSU
-            kernel: 6
-
-          # OCUV builds (automatic, no dispatch input needed)
+        branch: [SUSFS, NEXT, NOKSU, OCUV]
+        kernel: [1, 2, 3, 4, 5, 6]
+        exclude:
           - branch: OCUV
+            kernel: 3
+          - branch: OCUV
+            kernel: 4
+          - branch: OCUV
+            kernel: 6
+          - branch: SUSFS
             kernel: 1
-          - branch: OCUV
+          - branch: SUSFS
             kernel: 2
-          - branch: OCUV
+          - branch: SUSFS
+            kernel: 5
+          - branch: NEXT
+            kernel: 1
+          - branch: NEXT
+            kernel: 2
+          - branch: NEXT
+            kernel: 5
+          - branch: NOKSU
+            kernel: 1
+          - branch: NOKSU
+            kernel: 2
+          - branch: NOKSU
             kernel: 5
 
     runs-on: ubuntu-latest
     env:
       UPLOAD_TO_RELEASE: false
+
+    # Skip builds based on BUILD_TYPE
+    if: |
+      matrix.branch == 'OCUV' || 
+      (github.event.inputs.BUILD_TYPE == 'stable' && (matrix.branch == 'SUSFS' || matrix.branch == 'NEXT' || matrix.branch == 'NOKSU')) ||
+      (github.event.inputs.BUILD_TYPE == 'wip' && (matrix.branch == 'SUSFS' || matrix.branch == 'NEXT'))
 
     steps:
       - name: Install Dependencies
@@ -136,28 +140,28 @@ jobs:
 
       - name: Set Kernel Environment Variables
         run: |
-          echo "KERNEL_TREE=${{ github.event.inputs.KERNEL_TREE }}" >> $GITHUB_ENV
+          echo "KERNEL_TREE=${{ github.event.inputs.KERNEL_TREE_1 }}" >> $GITHUB_ENV
           case "${{ matrix.branch }}" in
             SUSFS) 
-              echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_SUSFS }}" >> $GITHUB_ENV
-              echo "BRANCH_NAME=SUSFS" >> $GITHUB_ENV 
-              echo "ENABLE_KPM_FOR_BRANCH=${{ github.event.inputs.ENABLE_KPM }}" >> $GITHUB_ENV
-              ;;
+              if [[ "${{ github.event.inputs.BUILD_TYPE }}" == "stable" ]]; then
+                echo "KERNEL_TREE_BRANCH=stable-susfs" >> $GITHUB_ENV
+              else
+                echo "KERNEL_TREE_BRANCH=wip-susfs" >> $GITHUB_ENV
+              fi
+              echo "BRANCH_NAME=SUSFS" >> $GITHUB_ENV ;;
             NEXT) 
-              echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_NEXT }}" >> $GITHUB_ENV
-              echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV 
-              echo "ENABLE_KPM_FOR_BRANCH=${{ github.event.inputs.ENABLE_KPM }}" >> $GITHUB_ENV
-              ;;
+              if [[ "${{ github.event.inputs.BUILD_TYPE }}" == "stable" ]]; then
+                echo "KERNEL_TREE_BRANCH=stable-next" >> $GITHUB_ENV
+              else
+                echo "KERNEL_TREE_BRANCH=wip-next" >> $GITHUB_ENV
+              fi
+              echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV ;;
             NOKSU) 
-              echo "KERNEL_TREE_BRANCH=wip-noksu" >> $GITHUB_ENV
-              echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV 
-              echo "ENABLE_KPM_FOR_BRANCH=false" >> $GITHUB_ENV
-              ;;
+              echo "KERNEL_TREE_BRANCH=stable-noksu" >> $GITHUB_ENV
+              echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV ;;
             OCUV) 
               echo "KERNEL_TREE_BRANCH=ocuv" >> $GITHUB_ENV
-              echo "BRANCH_NAME=OCUV" >> $GITHUB_ENV 
-              echo "ENABLE_KPM_FOR_BRANCH=false" >> $GITHUB_ENV
-              ;;
+              echo "BRANCH_NAME=OCUV" >> $GITHUB_ENV ;;
           esac
 
       - name: Checkout Kernel
@@ -238,23 +242,7 @@ jobs:
           cd kernel_tree
           make O=out vendor/munch_defconfig
           make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
-
-      - name: Apply KPM Patch (SUSFS and NEXT only)
-        if: ${{ env.ENABLE_KPM_FOR_BRANCH == 'true' }}
-        run: |
-          cd kernel_tree
-          echo "Applying KPM patch for ${{ matrix.branch }}..."
-          # Patch kpm
-          cd out/arch/arm64/boot
-          curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/refs/heads/main/kpm/patch_linux" -o patch
-          chmod +x patch
-          ./patch
-          gzip -c Image > Image.gz
-          cd ../../../..
-
-      - name: Move Build Artifacts
-        run: |
-          cd kernel_tree
+          
           if [[ "${{ matrix.branch }}" == "OCUV" ]]; then
             if [[ "${{ matrix.kernel }}" == 1 ]]; then
               mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
@@ -267,11 +255,7 @@ jobs:
             fi
           else
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
-              if [[ "${{ env.ENABLE_KPM_FOR_BRANCH }}" == "true" ]]; then
-                cp out/arch/arm64/boot/Image.gz ../Image
-              else
-                cp out/arch/arm64/boot/Image ../Image
-              fi
+              cp out/arch/arm64/boot/Image ../Image
               mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
             elif [[ "${{ matrix.kernel }}" == 4 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-effcpu-gpustk-dtb
@@ -333,10 +317,14 @@ jobs:
 
   package_anykernel:
     needs: build
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         branch: [SUSFS, NEXT, NOKSU]
-    runs-on: ubuntu-latest
+    # Skip NOKSU for wip builds, include all for stable builds
+    if: |
+      (github.event.inputs.BUILD_TYPE == 'stable') ||
+      (github.event.inputs.BUILD_TYPE == 'wip' && matrix.branch != 'NOKSU')
 
     steps:
       - name: Download OCUV Kernel 1 Components
@@ -391,11 +379,7 @@ jobs:
         run: |
           export TZ='Asia/Manila'
           COMPILED_DATE=$(date +%Y%m%d)
-          KPM_SUFFIX=""
-          if [[ "${{ github.event.inputs.ENABLE_KPM }}" == "true" && ("${{ matrix.branch }}" == "SUSFS" || "${{ matrix.branch }}" == "NEXT") ]]; then
-            KPM_SUFFIX="-KPM"
-          fi
-          echo "ZIP_NAME=[FusionX-${{ matrix.branch }}$KPM_SUFFIX]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
+          echo "ZIP_NAME=[FusionX-${{ matrix.branch }}]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
           echo "KERNEL_TYPE=${{ matrix.branch }}" >> $GITHUB_ENV
 
       - name: Create ZIP file
@@ -426,9 +410,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CLANG_TOOLCHAIN: ${{ github.event.inputs.CLANG_TOOLCHAIN }}
           LTO_CONFIG: ${{ github.event.inputs.USE_LTO_THIN }}
-          KERNEL_TREE_BRANCH_SUSFS: ${{ github.event.inputs.KERNEL_TREE_BRANCH_SUSFS }}
-          KERNEL_TREE_BRANCH_NEXT: ${{ github.event.inputs.KERNEL_TREE_BRANCH_NEXT }}
-          ENABLE_KPM: ${{ github.event.inputs.ENABLE_KPM }}
+          BUILD_TYPE: ${{ github.event.inputs.BUILD_TYPE }}
           BUILD_START_TIME: ${{ github.run_started_at }}
           VERSION: ${{ github.event.inputs.VERSION }}
         run: |
@@ -462,9 +444,9 @@ jobs:
           chat_id = os.environ.get('TELEGRAM_CHAT_ID')
           clang = os.environ.get('CLANG_TOOLCHAIN', 'aosp')
           lto = 'THIN' if os.environ.get('LTO_CONFIG') == 'true' else 'FULL'
-          kpm_status = 'ON' if os.environ.get('ENABLE_KPM') == 'true' else 'OFF'
           build_start_time = os.environ.get('BUILD_START_TIME')
           version = os.environ.get('VERSION', '2.x')
+          build_type = os.environ.get('BUILD_TYPE', 'wip')
           manila_tz = timezone(timedelta(hours=8))
           build_date = datetime.now(manila_tz).strftime('%Y-%m-%d %H:%M:%S')
           zip_files = glob.glob('artifacts/**/*.zip', recursive=True)
@@ -481,21 +463,23 @@ jobs:
               file_name = os.path.basename(zip_file)
               
               if "SUSFS" in file_name:
-                  branch_info = os.environ.get('KERNEL_TREE_BRANCH_SUSFS', 'susfs')
-                  build_type = "SUSFS"
+                  build_branch_type = "SUSFS"
+                  if build_type == 'stable':
+                      branch_info = "stable-susfs"
+                  else:
+                      branch_info = "wip-susfs"
               elif "NEXT" in file_name:
-                  branch_info = os.environ.get('KERNEL_TREE_BRANCH_NEXT', 'next')
-                  build_type = "NEXT"
+                  build_branch_type = "NEXT"
+                  if build_type == 'stable':
+                      branch_info = "stable-next"
+                  else:
+                      branch_info = "wip-next"
               elif "NOKSU" in file_name:
-                  branch_info = "wip-noksu"
-                  build_type = "NOKSU"
+                  build_branch_type = "NOKSU"
+                  branch_info = "stable-noksu"
               else:
                   branch_info = "unknown"
-                  build_type = "Unknown"
-              
-              kpm_info = ""
-              if "KPM" in file_name:
-                  kpm_info = f"\n<b> KPM:</b>         {kpm_status}"
+                  build_branch_type = "Unknown"
               
               caption = f"""<pre>
             <b> FusionX Build Complete! </b>
@@ -503,9 +487,10 @@ jobs:
             <b> Date:</b>        {build_date}
             <b> Branch:</b>      {branch_info}
             <b> Version:</b>     {version}
+            <b> Build Type:</b>  {build_type}
             <b> Lto:</b>         {lto}
             <b> Clang:</b>       {clang}
-            <b> Build Type:</b>  {build_type}{kpm_info}
+            <b> Variant:</b>     {build_branch_type}
             ==============================
             </pre>"""
               
