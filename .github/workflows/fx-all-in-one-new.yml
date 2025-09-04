@@ -5,7 +5,7 @@ on:
     inputs:
       KERNEL_TREE_1:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenX-Private-Space/FUSIONX-SM8250.git'
+        default: 'https://github.com/SenX-Private-Space/fusionx-2'
         required: true
       KERNEL_TREE_BRANCH_1:
         description: 'Kernel Tree Branch (SUSFS)'
