@@ -66,7 +66,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # SUSFS builds (only gpustk variants)
+          # SUSFS builds (gpustk and uv variants)
           - branch: SUSFS
             kernel: 3
             variant: gpustk
@@ -76,6 +76,15 @@ jobs:
           - branch: SUSFS
             kernel: 6
             variant: gpustk
+          - branch: SUSFS
+            kernel: 3
+            variant: uv
+          - branch: SUSFS
+            kernel: 4
+            variant: uv
+          - branch: SUSFS
+            kernel: 6
+            variant: uv
 
           # NEXT builds (both uv and gpustk variants)
           - branch: NEXT
@@ -97,7 +106,7 @@ jobs:
             kernel: 6
             variant: gpustk
 
-          # NOKSU builds (only gpustk variants)
+          # NOKSU builds (gpustk and uv variants)
           - branch: NOKSU
             kernel: 3
             variant: gpustk
@@ -107,6 +116,15 @@ jobs:
           - branch: NOKSU
             kernel: 6
             variant: gpustk
+          - branch: NOKSU
+            kernel: 3
+            variant: uv
+          - branch: NOKSU
+            kernel: 4
+            variant: uv
+          - branch: NOKSU
+            kernel: 6
+            variant: uv
 
           # OCUV builds (original variants)
           - branch: OCUV
@@ -265,7 +283,8 @@ jobs:
             elif [[ "${{ matrix.kernel }}" == 5 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-slightuc-dtb
             fi
-          elif [[ "${{ matrix.branch }}" == "NEXT" && "${{ matrix.variant }}" == "uv" ]]; then
+          elif [[ "${{ matrix.variant }}" == "uv" ]]; then
+            # UV variants for all branches (SUSFS, NEXT, NOKSU)
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
               cp out/arch/arm64/boot/Image ../Image
               mv out/arch/arm64/boot/dtb.img ../munch-normal-uv-dtb
@@ -275,7 +294,7 @@ jobs:
               mv out/arch/arm64/boot/dtb.img ../munch-slightuc-uv-dtb
             fi
           else
-            # All other branches (SUSFS, NOKSU, and NEXT gpustk variant)
+            # GPUSTK variants for all branches (SUSFS, NEXT, NOKSU)
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
               cp out/arch/arm64/boot/Image ../Image
               mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
@@ -312,53 +331,55 @@ jobs:
           path: |
             munch-slightuc-dtb
 
-      - name: Upload NEXT UV Kernel 3 (with Image)
+      # Upload UV variants for all branches
+      - name: Upload UV Kernel 3 (with Image)
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 3 && matrix.branch == 'NEXT' && matrix.variant == 'uv'
+        if: matrix.kernel == 3 && matrix.variant == 'uv'
         with:
-          name: next-uv-kernel-3-base
+          name: uv-kernel-${{ matrix.branch }}-3
           path: |
             Image
             munch-normal-uv-dtb
 
-      - name: Upload NEXT UV Kernel 4
+      - name: Upload UV Kernel 4
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 4 && matrix.branch == 'NEXT' && matrix.variant == 'uv'
+        if: matrix.kernel == 4 && matrix.variant == 'uv'
         with:
-          name: next-uv-kernel-4
+          name: uv-kernel-${{ matrix.branch }}-4
           path: |
             munch-effcpu-uv-dtb
 
-      - name: Upload NEXT UV Kernel 6
+      - name: Upload UV Kernel 6
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 6 && matrix.branch == 'NEXT' && matrix.variant == 'uv'
+        if: matrix.kernel == 6 && matrix.variant == 'uv'
         with:
-          name: next-uv-kernel-6
+          name: uv-kernel-${{ matrix.branch }}-6
           path: |
             munch-slightuc-uv-dtb
 
-      - name: Upload Branch Kernel 3 (with Image) - GPUSTK
+      # Upload GPUSTK variants for all branches
+      - name: Upload GPUSTK Kernel 3 (with Image)
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 3 && matrix.variant == 'gpustk'
         with:
-          name: kernel-${{ matrix.branch }}-3-gpustk
+          name: gpustk-kernel-${{ matrix.branch }}-3
           path: |
             Image
             munch-normal-gpustk-dtb
 
-      - name: Upload Branch Kernel 4 - GPUSTK
+      - name: Upload GPUSTK Kernel 4
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 4 && matrix.variant == 'gpustk'
         with:
-          name: kernel-${{ matrix.branch }}-4-gpustk
+          name: gpustk-kernel-${{ matrix.branch }}-4
           path: |
             munch-effcpu-gpustk-dtb
 
-      - name: Upload Branch Kernel 6 - GPUSTK
+      - name: Upload GPUSTK Kernel 6
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 6 && matrix.variant == 'gpustk'
         with:
-          name: kernel-${{ matrix.branch }}-6-gpustk
+          name: gpustk-kernel-${{ matrix.branch }}-6
           path: |
             munch-slightuc-gpustk-dtb
 
@@ -388,52 +409,51 @@ jobs:
           name: ocuv-kernel-5-components
           path: ocuv-kernel-5
 
-      - name: Download NEXT UV Kernel 3 (with Image)
+      # Download UV variants for each branch
+      - name: Download UV Kernel 3 (with Image)
         uses: actions/download-artifact@v4
-        if: matrix.branch == 'NEXT'
         with:
-          name: next-uv-kernel-3-base
-          path: next-uv-kernel-3
+          name: uv-kernel-${{ matrix.branch }}-3
+          path: uv-kernel-3
 
-      - name: Download NEXT UV Kernel 4
+      - name: Download UV Kernel 4
         uses: actions/download-artifact@v4
-        if: matrix.branch == 'NEXT'
         with:
-          name: next-uv-kernel-4
-          path: next-uv-kernel-4
+          name: uv-kernel-${{ matrix.branch }}-4
+          path: uv-kernel-4
 
-      - name: Download NEXT UV Kernel 6
+      - name: Download UV Kernel 6
         uses: actions/download-artifact@v4
-        if: matrix.branch == 'NEXT'
         with:
-          name: next-uv-kernel-6
-          path: next-uv-kernel-6
+          name: uv-kernel-${{ matrix.branch }}-6
+          path: uv-kernel-6
 
-      - name: Download Branch Kernel 3 (with Image) - GPUSTK
+      # Download GPUSTK variants for each branch
+      - name: Download GPUSTK Kernel 3 (with Image)
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-3-gpustk
-          path: branch-kernel-3-gpustk
+          name: gpustk-kernel-${{ matrix.branch }}-3
+          path: gpustk-kernel-3
 
-      - name: Download Branch Kernel 4 - GPUSTK
+      - name: Download GPUSTK Kernel 4
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-4-gpustk
-          path: branch-kernel-4-gpustk
+          name: gpustk-kernel-${{ matrix.branch }}-4
+          path: gpustk-kernel-4
 
-      - name: Download Branch Kernel 6 - GPUSTK
+      - name: Download GPUSTK Kernel 6
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-6-gpustk
-          path: branch-kernel-6-gpustk
+          name: gpustk-kernel-${{ matrix.branch }}-6
+          path: gpustk-kernel-6
 
       - name: Clone AnyKernel3
         run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b test AnyKernel3-${{ matrix.branch }}
 
       - name: Combine All Kernel Components
         run: |
-          # Copy base Image from kernel-3-gpustk (all branches have this)
-          cp branch-kernel-3-gpustk/* AnyKernel3-${{ matrix.branch }}/
+          # Copy base Image from gpustk-kernel-3 (all branches have this)
+          cp gpustk-kernel-3/* AnyKernel3-${{ matrix.branch }}/
           
           # Copy OCUV DTBs (same for all branches)
           cp ocuv-kernel-1/* AnyKernel3-${{ matrix.branch }}/
@@ -441,15 +461,13 @@ jobs:
           cp ocuv-kernel-5/* AnyKernel3-${{ matrix.branch }}/
           
           # Copy GPUSTK DTBs (all branches)
-          cp branch-kernel-4-gpustk/* AnyKernel3-${{ matrix.branch }}/
-          cp branch-kernel-6-gpustk/* AnyKernel3-${{ matrix.branch }}/
+          cp gpustk-kernel-4/* AnyKernel3-${{ matrix.branch }}/
+          cp gpustk-kernel-6/* AnyKernel3-${{ matrix.branch }}/
           
-          # Copy NEXT UV DTBs (only for NEXT branch)
-          if [[ "${{ matrix.branch }}" == "NEXT" ]]; then
-            cp next-uv-kernel-3/* AnyKernel3-${{ matrix.branch }}/
-            cp next-uv-kernel-4/* AnyKernel3-${{ matrix.branch }}/
-            cp next-uv-kernel-6/* AnyKernel3-${{ matrix.branch }}/
-          fi
+          # Copy UV DTBs (now available for all branches)
+          cp uv-kernel-3/* AnyKernel3-${{ matrix.branch }}/
+          cp uv-kernel-4/* AnyKernel3-${{ matrix.branch }}/
+          cp uv-kernel-6/* AnyKernel3-${{ matrix.branch }}/
 
       - name: Define ZIP Name
         run: |
