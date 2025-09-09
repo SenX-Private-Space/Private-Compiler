@@ -5,7 +5,7 @@ on:
     inputs:
       KERNEL_TREE_1:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenX-Private-Space/fusionx-2'
+        default: https://github.com/SenX-Private-Space/fusionX_private3'
         required: true
       KERNEL_TREE_BRANCH_1:
         description: 'Kernel Tree Branch (SUSFS)'
@@ -149,7 +149,7 @@ jobs:
             tar -xf clang.tar.gz -C clang-aosp-20
             echo "aosp-20-r547379" > clang-version
           elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
-            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/d0e0a3882edb1acc193263ae98fce706e82aca38/clang-r574158.tar.gz -O clang.tar.gz
+            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/4d2864f08ff2c290563fb903a5156e0504620bbe/clang-r563880c.tar.gz -O clang.tar.gz -O clang.tar.gz
             mkdir -p clang-aosp-21
             tar -xf clang.tar.gz -C clang-aosp-21
             echo "aosp-21-r574158" > clang-version
