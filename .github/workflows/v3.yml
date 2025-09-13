@@ -31,10 +31,6 @@ on:
         options:
           - stable-noksu
           - wip-noksu
-      KERNEL_TREE_BRANCH_4:
-        description: 'Kernel Tree Branch (OCUV)'
-        default: 'ocuv'
-        required: false
       VERSION:
         description: 'Zip Version'
         default: '2.x'
@@ -61,6 +57,14 @@ on:
         default: 'false'
         required: false
         type: boolean
+      OPLUS_FEATURES:
+        description: 'Enable OPLUS features'
+        required: true
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+        default: 'no'
 
 jobs:
   build:
@@ -109,7 +113,7 @@ jobs:
             kernel: 6
             variant: gpustk
 
-          # OCUV builds (original variants)
+          # OCUV builds (hardcoded branch - fixed to 'ocuv')
           - branch: OCUV
             kernel: 1
             variant: original
@@ -149,7 +153,7 @@ jobs:
             tar -xf clang.tar.gz -C clang-aosp-20
             echo "aosp-20-r547379" > clang-version
           elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
-            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/4d2864f08ff2c290563fb903a5156e0504620bbe/clang-r563880c.tar.gz -O clang.tar.gz -O clang.tar.gz
+            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/603a89415bbb04dff8bc577b95534479ec13fdc5/clang-r574158.tar.gz -O clang.tar.gz
             mkdir -p clang-aosp-21
             tar -xf clang.tar.gz -C clang-aosp-21
             echo "aosp-21-r574158" > clang-version
@@ -181,7 +185,7 @@ jobs:
                   echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV ;;
             NOKSU) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}" >> $GITHUB_ENV
                    echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV ;;
-            OCUV) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_4 }}" >> $GITHUB_ENV
+            OCUV) echo "KERNEL_TREE_BRANCH=ocuv" >> $GITHUB_ENV
                   echo "BRANCH_NAME=OCUV" >> $GITHUB_ENV ;;
           esac
 
@@ -208,6 +212,12 @@ jobs:
           /CONFIG_LTO_CLANG_FULL=y/c\# CONFIG_LTO_CLANG_FULL is not set
           /# CONFIG_LTO_CLANG_THIN is not set/c\CONFIG_LTO_CLANG_THIN=y
           ' arch/arm64/configs/vendor/munch_defconfig
+
+      - name: Enable OPLUS Features
+        if: ${{ github.event.inputs.OPLUS_FEATURES == 'yes' }}
+        run: |
+          cd kernel_tree
+          sed -i -e '/# CONFIG_OPLUS_PORT is not set/c\CONFIG_OPLUS_PORT=y' arch/arm64/configs/vendor/munch_defconfig
 
       - name: Remove cycle count
         run: |
@@ -466,7 +476,11 @@ jobs:
         run: |
           export TZ='Asia/Manila'
           COMPILED_DATE=$(date +%Y%m%d)
-          echo "ZIP_NAME=[FusionX-${{ matrix.branch }}]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
+          EXTRA=""
+          if [[ "${{ github.event.inputs.OPLUS_FEATURES }}" == "yes" ]]; then
+            EXTRA="-OPLUS"
+          fi
+          echo "ZIP_NAME=[FusionX-${{ matrix.branch }}${EXTRA}]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
           echo "KERNEL_TYPE=${{ matrix.branch }}" >> $GITHUB_ENV
 
       - name: Create ZIP file
@@ -497,6 +511,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CLANG_TOOLCHAIN: ${{ github.event.inputs.CLANG_TOOLCHAIN }}
           LTO_CONFIG: ${{ github.event.inputs.USE_LTO_THIN }}
+          OPLUS_FEATURES: ${{ github.event.inputs.OPLUS_FEATURES }}
           KERNEL_TREE_BRANCH_1: ${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}
           KERNEL_TREE_BRANCH_2: ${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}
           KERNEL_TREE_BRANCH_3: ${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}
@@ -533,6 +548,7 @@ jobs:
           chat_id = os.environ.get('TELEGRAM_CHAT_ID')
           clang = os.environ.get('CLANG_TOOLCHAIN', 'aosp')
           lto = 'THIN' if os.environ.get('LTO_CONFIG') == 'true' else 'FULL'
+          oplus = 'YES' if os.environ.get('OPLUS_FEATURES') == 'yes' else 'NO'
           build_start_time = os.environ.get('BUILD_START_TIME')
           version = os.environ.get('VERSION', '2.x')
           manila_tz = timezone(timedelta(hours=8))
@@ -571,6 +587,7 @@ jobs:
             <b> Version:</b>     {version}
             <b> Lto:</b>         {lto}
             <b> Clang:</b>       {clang}
+            <b> OPLUS:</b>       {oplus}
             <b> Build Type:</b>  {build_type}
             ==============================
             </pre>"""
@@ -582,8 +599,4 @@ jobs:
                   else:
                       print(f"❌ Failed to send {file_name}: {result}")
               except Exception as e:
-                  print(f"❌ Error sending {file_name}: {str(e)}")
-
-          EOF
-
-          python3 send_telegram.py
+                  print(f"❌ Error sending {
