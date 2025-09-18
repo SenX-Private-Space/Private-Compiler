@@ -4,9 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       KERNEL_TREE_1:
+        description: 'Kernel Tree'
         default: 'https://github.com/SenX-Private-Space/fusionX_private3.git'
         required: true
       KERNEL_TREE_BRANCH_1:
+        description: 'Kernel Tree Branch (SUSFS)'
         default: 'wip-susfs'
         required: false
         type: choice
@@ -14,6 +16,7 @@ on:
           - stable-susfs
           - wip-susfs
       KERNEL_TREE_BRANCH_2:
+        description: 'Kernel Tree Branch (NEXT)'
         default: 'wip-next'
         required: false
         type: choice
@@ -21,6 +24,7 @@ on:
           - stable-next
           - wip-next
       KERNEL_TREE_BRANCH_3:
+        description: 'Kernel Tree Branch (NOKSU)'
         default: 'wip-noksu'
         required: false
         type: choice
@@ -28,15 +32,19 @@ on:
           - stable-noksu
           - wip-noksu
       VERSION:
+        description: 'Zip Version'
         default: '2.x'
         required: false
       ANYKERNEL_URL:
+        description: 'AnyKernel Url (leave blank if you dont want AnyKernel)'
         default: 'https://github.com/SenseiiX/AnyKernel3'
         required: false
       CUSTOM_SED:
+        description: 'Custom Kernel Version'
         default: '-FusionX'
         required: false
       CLANG_TOOLCHAIN:
+        description: 'Clang toolchain selection'
         default: 'aosp clang 20'
         required: true
         type: choice
@@ -45,10 +53,12 @@ on:
         - aosp clang 20
         - aosp clang 21
       USE_LTO_THIN:
+        description: 'Use LTO THIN instead of FULL'
         default: 'false'
         required: false
         type: boolean
       OPLUS_FEATURES:
+        description: 'Enable OPLUS features'
         required: true
         type: choice
         options:
@@ -139,7 +149,7 @@ jobs:
             tar -xf clang.tar.gz -C clang-aosp-20
             echo "aosp-20-r547379" > clang-version
           elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
-            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/4d2864f08ff2c290563fb903a5156e0504620bbe/clang-r563880c.tar.gz -O clang.tar.gz -O clang.tar.gz
+            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/603a89415bbb04dff8bc577b95534479ec13fdc5/clang-r574158.tar.gz -O clang.tar.gz -O clang.tar.gz
             mkdir -p clang-aosp-21
             tar -xf clang.tar.gz -C clang-aosp-21
             echo "aosp-21-r574158" > clang-version
