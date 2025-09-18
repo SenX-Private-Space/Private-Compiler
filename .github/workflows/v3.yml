@@ -4,11 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       KERNEL_TREE_1:
-        description: 'Kernel Tree'
         default: 'https://github.com/SenX-Private-Space/fusionX_private3.git'
         required: true
       KERNEL_TREE_BRANCH_1:
-        description: 'Kernel Tree Branch (SUSFS)'
         default: 'wip-susfs'
         required: false
         type: choice
@@ -16,7 +14,6 @@ on:
           - stable-susfs
           - wip-susfs
       KERNEL_TREE_BRANCH_2:
-        description: 'Kernel Tree Branch (NEXT)'
         default: 'wip-next'
         required: false
         type: choice
@@ -24,7 +21,6 @@ on:
           - stable-next
           - wip-next
       KERNEL_TREE_BRANCH_3:
-        description: 'Kernel Tree Branch (NOKSU)'
         default: 'wip-noksu'
         required: false
         type: choice
@@ -32,19 +28,15 @@ on:
           - stable-noksu
           - wip-noksu
       VERSION:
-        description: 'Zip Version'
         default: '2.x'
         required: false
       ANYKERNEL_URL:
-        description: 'AnyKernel Url (leave blank if you dont want AnyKernel)'
         default: 'https://github.com/SenseiiX/AnyKernel3'
         required: false
       CUSTOM_SED:
-        description: 'Custom Kernel Version'
         default: '-FusionX'
         required: false
       CLANG_TOOLCHAIN:
-        description: 'Clang toolchain selection'
         default: 'aosp clang 20'
         required: true
         type: choice
@@ -53,12 +45,10 @@ on:
         - aosp clang 20
         - aosp clang 21
       USE_LTO_THIN:
-        description: 'Use LTO THIN instead of FULL'
         default: 'false'
         required: false
         type: boolean
       OPLUS_FEATURES:
-        description: 'Enable OPLUS features'
         required: true
         type: choice
         options:
@@ -71,7 +61,6 @@ jobs:
     strategy:
       matrix:
         include:
-          # SUSFS builds (only gpustk variants)
           - branch: SUSFS
             kernel: 3
             variant: gpustk
@@ -82,7 +71,6 @@ jobs:
             kernel: 6
             variant: gpustk
 
-          # NEXT builds (both uv and gpustk variants)
           - branch: NEXT
             kernel: 3
             variant: uv
@@ -102,7 +90,6 @@ jobs:
             kernel: 6
             variant: gpustk
 
-          # NOKSU builds (only gpustk variants)
           - branch: NOKSU
             kernel: 3
             variant: gpustk
@@ -113,7 +100,6 @@ jobs:
             kernel: 6
             variant: gpustk
 
-          # OCUV builds (hardcoded branch - fixed to 'ocuv')
           - branch: OCUV
             kernel: 1
             variant: original
@@ -294,7 +280,6 @@ jobs:
               mv out/arch/arm64/boot/dtb.img ../munch-slightuc-uv-dtb
             fi
           else
-            # All other branches (SUSFS, NOKSU, and NEXT gpustk variant)
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
               cp out/arch/arm64/boot/Image ../Image
               mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
@@ -407,7 +392,6 @@ jobs:
           name: ocuv-kernel-5-components
           path: ocuv-kernel-5
 
-      # Download UV components from NEXT build (will be shared across all branches)
       - name: Download NEXT UV Kernel 3 (with Image)
         uses: actions/download-artifact@v4
         with:
@@ -449,25 +433,20 @@ jobs:
 
       - name: Create Folder Structure and Organize Files
         run: |
-          # Create folder structure inside AnyKernel3
           mkdir -p AnyKernel3-${{ matrix.branch }}/dtbs/{ocuv,uv,stock}
           
-          # Copy base Image from kernel-3-gpustk to root (all branches have this)
           cp branch-kernel-3-gpustk/Image AnyKernel3-${{ matrix.branch }}/
           
-          # Copy OCUV DTBs to ocuv folder (same for all branches)
           cp ocuv-kernel-1/munch-aosp-dtbo.img AnyKernel3-${{ matrix.branch }}/
           cp ocuv-kernel-2/munch-miui-dtbo.img AnyKernel3-${{ matrix.branch }}/
           cp ocuv-kernel-1/munch-normal-dtb AnyKernel3-${{ matrix.branch }}/dtbs/ocuv/
           cp ocuv-kernel-2/munch-effcpu-dtb AnyKernel3-${{ matrix.branch }}/dtbs/ocuv/
           cp ocuv-kernel-5/munch-slightuc-dtb AnyKernel3-${{ matrix.branch }}/dtbs/ocuv/
           
-          # Copy UV DTBs from NEXT build to uv folder (shared across all branches)
           cp next-uv-kernel-3/munch-normal-uv-dtb AnyKernel3-${{ matrix.branch }}/dtbs/uv/
           cp next-uv-kernel-4/munch-effcpu-uv-dtb AnyKernel3-${{ matrix.branch }}/dtbs/uv/
           cp next-uv-kernel-6/munch-slightuc-uv-dtb AnyKernel3-${{ matrix.branch }}/dtbs/uv/
           
-          # Copy GPUSTK DTBs to stock folder (branch-specific)
           cp branch-kernel-3-gpustk/munch-normal-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
           cp branch-kernel-4-gpustk/munch-effcpu-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
           cp branch-kernel-6-gpustk/munch-slightuc-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
