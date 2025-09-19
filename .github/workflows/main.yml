@@ -1,11 +1,11 @@
-name: FusionX-ALL-SHITS-V2
+name: FusionX-ALL-SHITS-V3-OPTIMIZED
 on:
   pull_request:
   workflow_dispatch:
     inputs:
       KERNEL_TREE_1:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenX-Private-Space/fusionx-2'
+        default: 'https://github.com/SenX-Private-Space/fusionX_private4'
         required: true
       KERNEL_TREE_BRANCH_1:
         description: 'Kernel Tree Branch (SUSFS)'
@@ -31,10 +31,6 @@ on:
         options:
           - stable-noksu
           - wip-noksu
-      KERNEL_TREE_BRANCH_4:
-        description: 'Kernel Tree Branch (OCUV)'
-        default: 'ocuv'
-        required: false
       VERSION:
         description: 'Zip Version'
         default: '2.x'
@@ -61,24 +57,21 @@ on:
         default: 'false'
         required: false
         type: boolean
+      OPLUS_FEATURES:
+        description: 'Enable OPLUS features'
+        required: true
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+        default: 'no'
 
 jobs:
   build:
     strategy:
       matrix:
         include:
-          # SUSFS builds (only gpustk variants)
-          - branch: SUSFS
-            kernel: 3
-            variant: gpustk
-          - branch: SUSFS
-            kernel: 4
-            variant: gpustk
-          - branch: SUSFS
-            kernel: 6
-            variant: gpustk
-
-          # NEXT builds (both uv and gpustk variants)
+          # NEXT branch builds all kernels (3,4,6) for both uv and gpustk variants + DTBO files (1,2)
           - branch: NEXT
             kernel: 3
             variant: uv
@@ -97,19 +90,14 @@ jobs:
           - branch: NEXT
             kernel: 6
             variant: gpustk
+          - branch: NEXT
+            kernel: 1
+            variant: dtbo
+          - branch: NEXT
+            kernel: 2
+            variant: dtbo
 
-          # NOKSU builds (only gpustk variants)
-          - branch: NOKSU
-            kernel: 3
-            variant: gpustk
-          - branch: NOKSU
-            kernel: 4
-            variant: gpustk
-          - branch: NOKSU
-            kernel: 6
-            variant: gpustk
-
-          # OCUV builds (original variants)
+          # OCUV builds only normal DTB files (1,2,5)
           - branch: OCUV
             kernel: 1
             variant: original
@@ -149,7 +137,7 @@ jobs:
             tar -xf clang.tar.gz -C clang-aosp-20
             echo "aosp-20-r547379" > clang-version
           elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
-            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/d0e0a3882edb1acc193263ae98fce706e82aca38/clang-r574158.tar.gz -O clang.tar.gz
+            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/603a89415bbb04dff8bc577b95534479ec13fdc5/clang-r574158.tar.gz -O clang.tar.gz -O clang.tar.gz
             mkdir -p clang-aosp-21
             tar -xf clang.tar.gz -C clang-aosp-21
             echo "aosp-21-r574158" > clang-version
@@ -175,13 +163,9 @@ jobs:
         run: |
           echo "KERNEL_TREE=${{ github.event.inputs.KERNEL_TREE_1 }}" >> $GITHUB_ENV
           case "${{ matrix.branch }}" in
-            SUSFS) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}" >> $GITHUB_ENV
-                   echo "BRANCH_NAME=SUSFS" >> $GITHUB_ENV ;;
             NEXT) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}" >> $GITHUB_ENV
                   echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV ;;
-            NOKSU) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}" >> $GITHUB_ENV
-                   echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV ;;
-            OCUV) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_4 }}" >> $GITHUB_ENV
+            OCUV) echo "KERNEL_TREE_BRANCH=ocuv" >> $GITHUB_ENV
                   echo "BRANCH_NAME=OCUV" >> $GITHUB_ENV ;;
           esac
 
@@ -209,6 +193,12 @@ jobs:
           /# CONFIG_LTO_CLANG_THIN is not set/c\CONFIG_LTO_CLANG_THIN=y
           ' arch/arm64/configs/vendor/munch_defconfig
 
+      - name: Enable OPLUS Features
+        if: ${{ github.event.inputs.OPLUS_FEATURES == 'yes' }}
+        run: |
+          cd kernel_tree
+          sed -i -e '/# CONFIG_OPLUS_PORT is not set/c\CONFIG_OPLUS_PORT=y' arch/arm64/configs/vendor/munch_defconfig
+
       - name: Remove cycle count
         run: |
           cd kernel_tree
@@ -234,8 +224,8 @@ jobs:
           cd kernel_tree
           patch -p1 -f < "0001-stock-gpu-freq.patch"
 
-      - name: Apply Patches (SUSFS and NEXT only)
-        if: matrix.branch != 'NOKSU' && matrix.branch != 'OCUV'
+      - name: Apply Patches (NEXT only)
+        if: matrix.branch == 'NEXT'
         run: |
           cd kernel_tree
           bash nextpatch.sh
@@ -266,13 +256,17 @@ jobs:
           
           if [[ "${{ matrix.branch }}" == "OCUV" ]]; then
             if [[ "${{ matrix.kernel }}" == 1 ]]; then
-              mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
               mv out/arch/arm64/boot/dtb.img ../munch-normal-dtb
             elif [[ "${{ matrix.kernel }}" == 2 ]]; then
-              mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
               mv out/arch/arm64/boot/dtb.img ../munch-effcpu-dtb
             elif [[ "${{ matrix.kernel }}" == 5 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-slightuc-dtb
+            fi
+          elif [[ "${{ matrix.branch }}" == "NEXT" && "${{ matrix.variant }}" == "dtbo" ]]; then
+            if [[ "${{ matrix.kernel }}" == 1 ]]; then
+              mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
+            elif [[ "${{ matrix.kernel }}" == 2 ]]; then
+              mv out/arch/arm64/boot/dtbo.img ../munch-miui-dtbo.img
             fi
           elif [[ "${{ matrix.branch }}" == "NEXT" && "${{ matrix.variant }}" == "uv" ]]; then
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
@@ -283,10 +277,9 @@ jobs:
             elif [[ "${{ matrix.kernel }}" == 6 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-slightuc-uv-dtb
             fi
-          else
-            # All other branches (SUSFS, NOKSU, and NEXT gpustk variant)
+          elif [[ "${{ matrix.branch }}" == "NEXT" && "${{ matrix.variant }}" == "gpustk" ]]; then
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
-              cp out/arch/arm64/boot/Image ../Image
+              cp out/arch/arm64/boot/Image ../Image-gpustk
               mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
             elif [[ "${{ matrix.kernel }}" == 4 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-effcpu-gpustk-dtb
@@ -301,7 +294,6 @@ jobs:
         with:
           name: ocuv-kernel-1-components
           path: |
-            munch-aosp-dtbo.img
             munch-normal-dtb
 
       - name: Upload OCUV Kernel 2 Components
@@ -310,7 +302,6 @@ jobs:
         with:
           name: ocuv-kernel-2-components
           path: |
-            munch-miui-dtbo.img
             munch-effcpu-dtb
 
       - name: Upload OCUV Kernel 5 Components
@@ -321,6 +312,24 @@ jobs:
           path: |
             munch-slightuc-dtb
 
+      # Upload NEXT DTBO files
+      - name: Upload NEXT DTBO Kernel 1
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 1 && matrix.branch == 'NEXT' && matrix.variant == 'dtbo'
+        with:
+          name: next-dtbo-kernel-1
+          path: |
+            munch-aosp-dtbo.img
+
+      - name: Upload NEXT DTBO Kernel 2
+        uses: actions/upload-artifact@v4
+        if: matrix.kernel == 2 && matrix.branch == 'NEXT' && matrix.variant == 'dtbo'
+        with:
+          name: next-dtbo-kernel-2
+          path: |
+            munch-miui-dtbo.img
+
+      # Upload NEXT builds - these will be reused for all three branches
       - name: Upload NEXT UV Kernel 3 (with Image)
         uses: actions/upload-artifact@v4
         if: matrix.kernel == 3 && matrix.branch == 'NEXT' && matrix.variant == 'uv'
@@ -346,28 +355,28 @@ jobs:
           path: |
             munch-slightuc-uv-dtb
 
-      - name: Upload Branch Kernel 3 (with Image) - GPUSTK
+      - name: Upload NEXT GPUSTK Kernel 3 (with Image)
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 3 && matrix.variant == 'gpustk'
+        if: matrix.kernel == 3 && matrix.branch == 'NEXT' && matrix.variant == 'gpustk'
         with:
-          name: kernel-${{ matrix.branch }}-3-gpustk
+          name: next-gpustk-kernel-3-base
           path: |
-            Image
+            Image-gpustk
             munch-normal-gpustk-dtb
 
-      - name: Upload Branch Kernel 4 - GPUSTK
+      - name: Upload NEXT GPUSTK Kernel 4
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 4 && matrix.variant == 'gpustk'
+        if: matrix.kernel == 4 && matrix.branch == 'NEXT' && matrix.variant == 'gpustk'
         with:
-          name: kernel-${{ matrix.branch }}-4-gpustk
+          name: next-gpustk-kernel-4
           path: |
             munch-effcpu-gpustk-dtb
 
-      - name: Upload Branch Kernel 6 - GPUSTK
+      - name: Upload NEXT GPUSTK Kernel 6
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 6 && matrix.variant == 'gpustk'
+        if: matrix.kernel == 6 && matrix.branch == 'NEXT' && matrix.variant == 'gpustk'
         with:
-          name: kernel-${{ matrix.branch }}-6-gpustk
+          name: next-gpustk-kernel-6
           path: |
             munch-slightuc-gpustk-dtb
 
@@ -397,8 +406,20 @@ jobs:
           name: ocuv-kernel-5-components
           path: ocuv-kernel-5
 
-      # Download UV components from NEXT build (will be shared across all branches)
-      - name: Download NEXT UV Kernel 3 (with Image)
+      # Download NEXT DTBO files
+      - name: Download NEXT DTBO Kernel 1
+        uses: actions/download-artifact@v4
+        with:
+          name: next-dtbo-kernel-1
+          path: next-dtbo-kernel-1
+
+      - name: Download NEXT DTBO Kernel 2
+        uses: actions/download-artifact@v4
+        with:
+          name: next-dtbo-kernel-2
+          path: next-dtbo-kernel-2
+
+      - name: Download NEXT UV Kernels
         uses: actions/download-artifact@v4
         with:
           name: next-uv-kernel-3-base
@@ -416,57 +437,63 @@ jobs:
           name: next-uv-kernel-6
           path: next-uv-kernel-6
 
-      - name: Download Branch Kernel 3 (with Image) - GPUSTK
+      # Download NEXT GPUSTK builds (will be reused for all branches)
+      - name: Download NEXT GPUSTK Kernels
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-3-gpustk
-          path: branch-kernel-3-gpustk
+          name: next-gpustk-kernel-3-base
+          path: next-gpustk-kernel-3
 
-      - name: Download Branch Kernel 4 - GPUSTK
+      - name: Download NEXT GPUSTK Kernel 4
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-4-gpustk
-          path: branch-kernel-4-gpustk
+          name: next-gpustk-kernel-4
+          path: next-gpustk-kernel-4
 
-      - name: Download Branch Kernel 6 - GPUSTK
+      - name: Download NEXT GPUSTK Kernel 6
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-6-gpustk
-          path: branch-kernel-6-gpustk
+          name: next-gpustk-kernel-6
+          path: next-gpustk-kernel-6
 
       - name: Clone AnyKernel3
-        run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b test AnyKernel3-${{ matrix.branch }}
+        run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b fusionX AnyKernel3-${{ matrix.branch }}
 
       - name: Create Folder Structure and Organize Files
         run: |
-          # Create folder structure inside AnyKernel3
           mkdir -p AnyKernel3-${{ matrix.branch }}/dtbs/{ocuv,uv,stock}
           
-          # Copy base Image from kernel-3-gpustk to root (all branches have this)
-          cp branch-kernel-3-gpustk/Image AnyKernel3-${{ matrix.branch }}/
+          # Use the NEXT GPUSTK Image for all branches (since they're the same kernel 3,4,6)
+          cp next-gpustk-kernel-3/Image-gpustk AnyKernel3-${{ matrix.branch }}/Image
           
-          # Copy OCUV DTBs to ocuv folder (same for all branches)
-          cp ocuv-kernel-1/munch-aosp-dtbo.img AnyKernel3-${{ matrix.branch }}/
-          cp ocuv-kernel-2/munch-miui-dtbo.img AnyKernel3-${{ matrix.branch }}/
+          # DTBO files from NEXT builds
+          cp next-dtbo-kernel-1/munch-aosp-dtbo.img AnyKernel3-${{ matrix.branch }}/
+          cp next-dtbo-kernel-2/munch-miui-dtbo.img AnyKernel3-${{ matrix.branch }}/
+          
+          # Normal DTB files from OCUV builds
           cp ocuv-kernel-1/munch-normal-dtb AnyKernel3-${{ matrix.branch }}/dtbs/ocuv/
           cp ocuv-kernel-2/munch-effcpu-dtb AnyKernel3-${{ matrix.branch }}/dtbs/ocuv/
           cp ocuv-kernel-5/munch-slightuc-dtb AnyKernel3-${{ matrix.branch }}/dtbs/ocuv/
           
-          # Copy UV DTBs from NEXT build to uv folder (shared across all branches)
+          # UV files (same for all branches - from NEXT build)
           cp next-uv-kernel-3/munch-normal-uv-dtb AnyKernel3-${{ matrix.branch }}/dtbs/uv/
           cp next-uv-kernel-4/munch-effcpu-uv-dtb AnyKernel3-${{ matrix.branch }}/dtbs/uv/
           cp next-uv-kernel-6/munch-slightuc-uv-dtb AnyKernel3-${{ matrix.branch }}/dtbs/uv/
           
-          # Copy GPUSTK DTBs to stock folder (branch-specific)
-          cp branch-kernel-3-gpustk/munch-normal-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
-          cp branch-kernel-4-gpustk/munch-effcpu-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
-          cp branch-kernel-6-gpustk/munch-slightuc-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
+          # GPUSTK files (same for all branches - from NEXT build)
+          cp next-gpustk-kernel-3/munch-normal-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
+          cp next-gpustk-kernel-4/munch-effcpu-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
+          cp next-gpustk-kernel-6/munch-slightuc-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
 
       - name: Define ZIP Name
         run: |
           export TZ='Asia/Manila'
           COMPILED_DATE=$(date +%Y%m%d)
-          echo "ZIP_NAME=[FusionX-${{ matrix.branch }}]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
+          EXTRA=""
+          if [[ "${{ github.event.inputs.OPLUS_FEATURES }}" == "yes" ]]; then
+            EXTRA="-OPLUS"
+          fi
+          echo "ZIP_NAME=[FusionX-${{ matrix.branch }}${EXTRA}]-${{ github.event.inputs.VERSION }}-$COMPILED_DATE" >> $GITHUB_ENV
           echo "KERNEL_TYPE=${{ matrix.branch }}" >> $GITHUB_ENV
 
       - name: Create ZIP file
@@ -497,6 +524,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CLANG_TOOLCHAIN: ${{ github.event.inputs.CLANG_TOOLCHAIN }}
           LTO_CONFIG: ${{ github.event.inputs.USE_LTO_THIN }}
+          OPLUS_FEATURES: ${{ github.event.inputs.OPLUS_FEATURES }}
           KERNEL_TREE_BRANCH_1: ${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}
           KERNEL_TREE_BRANCH_2: ${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}
           KERNEL_TREE_BRANCH_3: ${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}
@@ -533,6 +561,7 @@ jobs:
           chat_id = os.environ.get('TELEGRAM_CHAT_ID')
           clang = os.environ.get('CLANG_TOOLCHAIN', 'aosp')
           lto = 'THIN' if os.environ.get('LTO_CONFIG') == 'true' else 'FULL'
+          oplus = 'YES' if os.environ.get('OPLUS_FEATURES') == 'yes' else 'NO'
           build_start_time = os.environ.get('BUILD_START_TIME')
           version = os.environ.get('VERSION', '2.x')
           manila_tz = timezone(timedelta(hours=8))
@@ -553,15 +582,19 @@ jobs:
               if "SUSFS" in file_name:
                   branch_info = os.environ.get('KERNEL_TREE_BRANCH_1', 'susfs1')
                   build_type = "SUSFS"
+                  build_note = "(Using NEXT kernels)"
               elif "NEXT" in file_name:
                   branch_info = os.environ.get('KERNEL_TREE_BRANCH_2', 'next1')
                   build_type = "NEXT"
+                  build_note = "(Source build)"
               elif "NOKSU" in file_name:
                   branch_info = os.environ.get('KERNEL_TREE_BRANCH_3', 'noksu1')
                   build_type = "NOKSU"
+                  build_note = "(Using NEXT kernels)"
               else:
                   branch_info = "unknown"
                   build_type = "Unknown"
+                  build_note = ""
               
               caption = f"""<pre>
             <b> FusionX Build Complete! </b>
@@ -571,7 +604,8 @@ jobs:
             <b> Version:</b>     {version}
             <b> Lto:</b>         {lto}
             <b> Clang:</b>       {clang}
-            <b> Build Type:</b>  {build_type}
+            <b> OPLUS:</b>       {oplus}
+            <b> Build Type:</b>  {build_type} {build_note}
             ==============================
             </pre>"""
               
