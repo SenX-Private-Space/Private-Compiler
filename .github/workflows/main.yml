@@ -1,4 +1,4 @@
-name: FusionX-ALL-SHITS-V3-OPTIMIZED
+name: FusionX-NON-BPF
 on:
   pull_request:
   workflow_dispatch:
