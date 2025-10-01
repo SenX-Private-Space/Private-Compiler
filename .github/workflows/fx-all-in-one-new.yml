@@ -293,7 +293,7 @@ jobs:
             fi
           elif [[ "${{ matrix.branch }}" == "NEXT" && "${{ matrix.variant }}" == "uv" ]]; then
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
-              cp out/arch/arm64/boot/Image ../Image
+              cp out/arch/arm64/boot/Image.gz ../Image.gz
               mv out/arch/arm64/boot/dtb.img ../munch-normal-uv-dtb
             elif [[ "${{ matrix.kernel }}" == 4 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-effcpu-uv-dtb
@@ -302,7 +302,7 @@ jobs:
             fi
           else
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
-              cp out/arch/arm64/boot/Image ../Image
+              cp out/arch/arm64/boot/Image.gz ../Image.gz
               mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
             elif [[ "${{ matrix.kernel }}" == 4 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-effcpu-gpustk-dtb
