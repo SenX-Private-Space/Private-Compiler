@@ -1,4 +1,4 @@
-name: FusionX-ALL-IN-ONE-2
+name: NEW
 on:
   pull_request:
   workflow_dispatch:
@@ -258,18 +258,18 @@ jobs:
           sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
           sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
 
-
       - name: Build Kernel
         run: |
           export PATH="${{ env.CLANG_PATH }}:$PATH"
+          export ARCH=arm64
+          export SUBARCH=ARM64
           export KBUILD_BUILD_USER="senx"
           export KBUILD_BUILD_HOST="ubuntu"
           export KBUILD_BUILD_TIMESTAMP="$(TZ=UTC-7 date)"
-          export MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 O=out CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1"
-          
           cd kernel_tree
-          
-          make $MAKE_ARGS vendor/munch_defconfig
+          make O=out vendor/munch_defconfig
+          make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
+
           scripts/config --file out/.config \
           -e KSU \
           -e KSU_MANUAL_HOOK \
@@ -279,8 +279,7 @@ jobs:
           -e KPM \
           -e KALLSYMS \
           -e KALLSYMS_ALL
-          make $MAKE_ARGS -j$(nproc --all)
-           
+          
           if [[ "${{ matrix.branch }}" == "OCUV" ]]; then
             if [[ "${{ matrix.kernel }}" == 1 ]]; then
               mv out/arch/arm64/boot/dtbo.img ../munch-aosp-dtbo.img
@@ -293,7 +292,7 @@ jobs:
             fi
           elif [[ "${{ matrix.branch }}" == "NEXT" && "${{ matrix.variant }}" == "uv" ]]; then
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
-              cp out/arch/arm64/boot/Image.gz ../Image.gz
+              cp out/arch/arm64/boot/Image ../Image
               mv out/arch/arm64/boot/dtb.img ../munch-normal-uv-dtb
             elif [[ "${{ matrix.kernel }}" == 4 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-effcpu-uv-dtb
@@ -302,7 +301,7 @@ jobs:
             fi
           else
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
-              cp out/arch/arm64/boot/Image.gz ../Image.gz
+              cp out/arch/arm64/boot/Image ../Image
               mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
             elif [[ "${{ matrix.kernel }}" == 4 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-effcpu-gpustk-dtb
