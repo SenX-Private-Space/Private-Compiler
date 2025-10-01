@@ -9,7 +9,7 @@ on:
         required: true
       KERNEL_TREE_BRANCH_1:
         description: 'Kernel Tree Branch (SUSFS)'
-        default: 'wip-susfs'
+        default: 'wip-sukisu-susfs'
         required: false
         type: choice
         options:
@@ -17,7 +17,7 @@ on:
           - wip-sukisu-susfs
       KERNEL_TREE_BRANCH_2:
         description: 'Kernel Tree Branch (NEXT)'
-        default: 'wip-next'
+        default: 'wip-sukisu'
         required: false
         type: choice
         options:
@@ -244,7 +244,7 @@ jobs:
         if: matrix.branch != 'NOKSU' && matrix.branch != 'OCUV'
         run: |
           cd kernel_tree
-          bash nextpatch.sh
+          bash setup_sukisu.sh
 
       - name: Apply Modifications (if modified build)
         if: matrix.kernel == 2 || matrix.kernel == 4
@@ -269,6 +269,16 @@ jobs:
           cd kernel_tree
           make O=out vendor/munch_defconfig
           make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
+
+          scripts/config --file out/.config \
+          -e KSU \
+          -e KSU_MANUAL_HOOK \
+          -e KPROBES \
+          -e HAVE_KPROBES \
+          -e KPROBE_EVENTS \
+          -e KPM \
+          -e KALLSYMS \
+          -e KALLSYMS_ALL
           
           if [[ "${{ matrix.branch }}" == "OCUV" ]]; then
             if [[ "${{ matrix.kernel }}" == 1 ]]; then
@@ -301,7 +311,7 @@ jobs:
           fi
           
       - name: Apply KPM Patch
-        if: matrix.branch != 'NOKSU'
+        if: matrix.branch != 'NOKSU' && matrix.branch != 'OCUV'
         run: |
           set -x
           
