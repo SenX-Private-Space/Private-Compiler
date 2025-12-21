@@ -1,4 +1,4 @@
-name: NEW
+name: FusionX-ALL-IN-ONE-2
 on:
   pull_request:
   workflow_dispatch:
@@ -7,51 +7,44 @@ on:
         description: 'Kernel Tree'
         default: 'https://github.com/SenseiiX/fusionX_sm8250'
         required: true
-      KERNEL_TREE_BRANCH_1:
-        description: 'Kernel Tree Branch (SUSFS)'
-        default: 'wip-sukisu-susfs'
-        required: false
-        type: choice
-        options:
-          - stable-susfs
-          - wip-sukisu-susfs
-      KERNEL_TREE_BRANCH_2:
+      KERNEL_TREE_BRANCH:
         description: 'Kernel Tree Branch (NEXT)'
-        default: 'wip-sukisu'
+        default: 'wip-next'
         required: false
         type: choice
         options:
           - stable-next
-          - wip-sukisu
-      KERNEL_TREE_BRANCH_3:
-        description: 'Kernel Tree Branch (NOKSU)'
-        default: 'wip-noksu'
-        required: false
+          - wip-next
+      BUILD_SCOPE:
+        description: 'Build Scope (Variants)'
+        default: 'ALL'
+        required: true
         type: choice
         options:
-          - stable-noksu
-          - wip-noksu
+          - ALL
+          - NEXT
+          - NOKSU
       VERSION:
         description: 'Zip Version'
-        default: '2.0'
+        default: '2.1'
         required: false
       ANYKERNEL_URL:
-        description: 'AnyKernel Url (leave blank if you dont want AnyKernel)'
+        description: 'AnyKernel Url'
         default: 'https://github.com/SenseiiX/AnyKernel3'
         required: false
       CUSTOM_SED:
         description: 'Custom Kernel Version'
-        default: '-FusionX-2.0'
+        default: '-FusionX-2.1'
         required: false
       CLANG_TOOLCHAIN:
         description: 'Clang toolchain selection'
-        default: 'aosp clang 20'
+        default: 'aosp clang 21'
         required: true
         type: choice
         options:
         - neutron
-        - aosp clang 20
         - aosp clang 21
+        - aosp clang 22
       USE_LTO_THIN:
         description: 'Use LTO THIN instead of FULL'
         default: 'false'
@@ -71,16 +64,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - branch: SUSFS
-            kernel: 3
-            variant: gpustk
-          - branch: SUSFS
-            kernel: 4
-            variant: gpustk
-          - branch: SUSFS
-            kernel: 6
-            variant: gpustk
-
+          # NEXT Branch (UV Variant - Always Required as Donor)
           - branch: NEXT
             kernel: 3
             variant: uv
@@ -90,6 +74,8 @@ jobs:
           - branch: NEXT
             kernel: 6
             variant: uv
+          
+          # NEXT Branch (GPUSTK Variant - Only for NEXT/ALL scope)
           - branch: NEXT
             kernel: 3
             variant: gpustk
@@ -100,16 +86,18 @@ jobs:
             kernel: 6
             variant: gpustk
 
-          - branch: NOKSU
+          # NEXT Branch (NOKSU Variant - Only for NOKSU/ALL scope)
+          - branch: NEXT
             kernel: 3
-            variant: gpustk
-          - branch: NOKSU
+            variant: noksu
+          - branch: NEXT
             kernel: 4
-            variant: gpustk
-          - branch: NOKSU
+            variant: noksu
+          - branch: NEXT
             kernel: 6
-            variant: gpustk
+            variant: noksu
 
+          # OCUV Branch (Donor - Always Required)
           - branch: OCUV
             kernel: 1
             variant: original
@@ -125,34 +113,64 @@ jobs:
       UPLOAD_TO_RELEASE: false
 
     steps:
+      - name: Check Build Requirements
+        id: build_check
+        run: |
+          SHOULD_BUILD="false"
+          SCOPE="${{ github.event.inputs.BUILD_SCOPE }}"
+          VARIANT="${{ matrix.variant }}"
+          BRANCH="${{ matrix.branch }}"
+          
+          # OCUV and UV variants are Donors, they must always build
+          if [[ "$BRANCH" == "OCUV" ]] || [[ "$VARIANT" == "uv" ]]; then
+            SHOULD_BUILD="true"
+          
+          # GPUSTK is for NEXT scope
+          elif [[ "$VARIANT" == "gpustk" ]]; then
+            if [[ "$SCOPE" == "ALL" ]] || [[ "$SCOPE" == "NEXT" ]]; then
+               SHOULD_BUILD="true"
+            fi
+            
+          # NOKSU is for NOKSU scope
+          elif [[ "$VARIANT" == "noksu" ]]; then
+            if [[ "$SCOPE" == "ALL" ]] || [[ "$SCOPE" == "NOKSU" ]]; then
+               SHOULD_BUILD="true"
+            fi
+          fi
+          
+          echo "SHOULD_BUILD=$SHOULD_BUILD" >> $GITHUB_ENV
+          echo "Build status for $VARIANT ($BRANCH): $SHOULD_BUILD"
+
       - name: Install Dependencies
+        if: env.SHOULD_BUILD == 'true'
         run: sudo apt install flex libncurses6
 
       - name: Cache Clang Toolchain
+        if: env.SHOULD_BUILD == 'true'
         id: cache-clang
         uses: actions/cache@v4
         with:
           path: |
             clang-neutron
-            clang-aosp-20
             clang-aosp-21
+            clang-aosp-22
           key: clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ hashFiles('**/clang-version') }}
           restore-keys: |
             clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-
 
       - name: Download & Extract Clang (If not cached)
-        if: steps.cache-clang.outputs.cache-hit != 'true'
+        if: env.SHOULD_BUILD == 'true' && steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 20" ]]; then
-            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
-            mkdir -p clang-aosp-20
-            tar -xf clang.tar.gz -C clang-aosp-20
-            echo "aosp-20-r547379" > clang-version
-          elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
-            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/603a89415bbb04dff8bc577b95534479ec13fdc5/clang-r574158.tar.gz -O clang.tar.gz -O clang.tar.gz
+          if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
+            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/508ea7dd0d8f681904d0422e98af9613aaabf180/clang-r574158.tar.gz -O clang.tar.gz
             mkdir -p clang-aosp-21
             tar -xf clang.tar.gz -C clang-aosp-21
             echo "aosp-21-r574158" > clang-version
+          elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 22" ]]; then
+            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/167e11df8c330bced88cdf5808f61f41d9eab330/clang-r584948.tar.gz -O clang.tar.gz
+            mkdir -p clang-aosp-22
+            tar -xf clang.tar.gz -C clang-aosp-22
+            echo "aosp-22-r584948" > clang-version
           else
             wget https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst -O clang.tar.zst
             mkdir -p clang-neutron
@@ -162,42 +180,51 @@ jobs:
           fi
 
       - name: Set Clang Path
+        if: env.SHOULD_BUILD == 'true'
         run: |
-          if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 20" ]]; then
-            echo "CLANG_PATH=$(pwd)/clang-aosp-20/bin" >> $GITHUB_ENV
-          elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
+          if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
             echo "CLANG_PATH=$(pwd)/clang-aosp-21/bin" >> $GITHUB_ENV
+          elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 22" ]]; then
+            echo "CLANG_PATH=$(pwd)/clang-aosp-22/bin" >> $GITHUB_ENV
           else
             echo "CLANG_PATH=$(pwd)/clang-neutron/bin" >> $GITHUB_ENV
           fi
 
       - name: Set Kernel Environment Variables
+        if: env.SHOULD_BUILD == 'true'
         run: |
           echo "KERNEL_TREE=${{ github.event.inputs.KERNEL_TREE_1 }}" >> $GITHUB_ENV
-          case "${{ matrix.branch }}" in
-            SUSFS) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}" >> $GITHUB_ENV
-                   echo "BRANCH_NAME=SUSFS" >> $GITHUB_ENV ;;
-            NEXT) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}" >> $GITHUB_ENV
-                  echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV ;;
-            NOKSU) echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}" >> $GITHUB_ENV
-                   echo "BRANCH_NAME=NOKSU" >> $GITHUB_ENV ;;
-            OCUV) echo "KERNEL_TREE_BRANCH=ocuv" >> $GITHUB_ENV
-                  echo "BRANCH_NAME=OCUV" >> $GITHUB_ENV ;;
-          esac
+          if [[ "${{ matrix.branch }}" == "OCUV" ]]; then
+            echo "KERNEL_TREE_BRANCH=ocuv" >> $GITHUB_ENV
+            echo "BRANCH_NAME=OCUV" >> $GITHUB_ENV
+          else
+            echo "KERNEL_TREE_BRANCH=${{ github.event.inputs.KERNEL_TREE_BRANCH }}" >> $GITHUB_ENV
+            echo "BRANCH_NAME=NEXT" >> $GITHUB_ENV
+          fi
 
       - name: Checkout Kernel
+        if: env.SHOULD_BUILD == 'true'
         run: |
           git clone --depth=1 --branch "${{ env.KERNEL_TREE_BRANCH }}" "${{ env.KERNEL_TREE }}" kernel_tree
 
       - name: Kernel Version
+        if: env.SHOULD_BUILD == 'true'
         run: |
           cd kernel_tree
-          if [[ "${{ github.event.inputs.CUSTOM_SED }}" != "-FusionX-2.0" ]]; then
-            sed -i -e 's/CONFIG_LOCALVERSION="-FusionX-2.0"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
+          if [[ "${{ github.event.inputs.CUSTOM_SED }}" != "-FusionX-2.1" ]]; then
+            sed -i -e 's/CONFIG_LOCALVERSION="-FusionX-2.1"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
           fi
 
+      - name: Disable KSU (For NOKSU Variant)
+        if: env.SHOULD_BUILD == 'true' && matrix.variant == 'noksu'
+        run: |
+          cd kernel_tree
+          echo "🚫 Disabling KernelSU Config..."
+          sed -i '/CONFIG_KSU/d' arch/arm64/configs/vendor/munch_defconfig
+          echo "# CONFIG_KSU is not set" >> arch/arm64/configs/vendor/munch_defconfig
+
       - name: Change LTO Configuration to THIN
-        if: ${{ github.event.inputs.USE_LTO_THIN == 'true' }}
+        if: env.SHOULD_BUILD == 'true' && github.event.inputs.USE_LTO_THIN == 'true'
         run: |
           cd kernel_tree
           echo "Changing LTO configuration from FULL to THIN..."
@@ -210,55 +237,44 @@ jobs:
           ' arch/arm64/configs/vendor/munch_defconfig
 
       - name: Enable OPLUS Features
-        if: ${{ github.event.inputs.OPLUS_FEATURES == 'yes' }}
+        if: env.SHOULD_BUILD == 'true' && github.event.inputs.OPLUS_FEATURES == 'yes'
         run: |
           cd kernel_tree
           sed -i -e '/# CONFIG_OPLUS_PORT is not set/c\CONFIG_OPLUS_PORT=y' arch/arm64/configs/vendor/munch_defconfig
 
-      - name: Remove cycle count
-        run: |
-          cd kernel_tree
-          sed -i '/case POWER_SUPPLY_PROP_CYCLE_COUNT:/,/break;/c\
-          \tcase POWER_SUPPLY_PROP_CYCLE_COUNT:\
-          \t#ifdef CONFIG_BATT_VERIFY_BY_DS28E16\
-          \t\tpval->intval = fg->maxim_cycle_count;\
-          \t#else\
-          \t\trc = get_cycle_count(chip->counter, &pval->intval);\
-          \t#endif\
-          \t\tbreak;' drivers/power/supply/qcom/qpnp-fg-gen4.c
-
       - name: Apply Modifications (if swift build)
-        if: matrix.kernel == 5 || matrix.kernel == 6
+        if: env.SHOULD_BUILD == 'true' && (matrix.kernel == 5 || matrix.kernel == 6)
         run: |
           cd kernel_tree
           sed -i -e '/<2841600>,/c\<2841600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
           sed -i -e '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
 
-      - name: Revert to stock gpufreq (for gpustk variant)
-        if: matrix.variant == 'gpustk'
+      - name: Revert to stock gpufreq (for gpustk or noksu variant)
+        if: env.SHOULD_BUILD == 'true' && (matrix.variant == 'gpustk' || matrix.variant == 'noksu')
         run: |
           cd kernel_tree
           patch -p1 -f < "0001-stock-gpu-freq.patch"
 
-      - name: Apply Patches (SUSFS and NEXT only)
-        if: matrix.branch != 'NOKSU' && matrix.branch != 'OCUV'
+      - name: Apply Patches (NEXT only)
+        if: env.SHOULD_BUILD == 'true' && matrix.branch != 'OCUV'
         run: |
           cd kernel_tree
-          bash setup_sukisu.sh
+          bash nextpatch.sh
 
       - name: Apply Modifications (if modified build)
-        if: matrix.kernel == 2 || matrix.kernel == 4
+        if: env.SHOULD_BUILD == 'true' && (matrix.kernel == 2 || matrix.kernel == 4)
         run: |
           cd kernel_tree
           sed -i -e '/<2553600>,/c\<2553600>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-          sed -i -e '/<2649600>,/c\//<2649600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-          sed -i -e '/<2745600>,/c\//<2745600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-          sed -i -e '/<2841600>,/c\//<2841600>,' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-          sed -i -e '/<3187200>;/c\//<3187200>;' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i '/<2649600>,/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i '/<2745600>,/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i '/<2841600>,/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          sed -i '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
           sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
           sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
 
       - name: Build Kernel
+        if: env.SHOULD_BUILD == 'true'
         run: |
           export PATH="${{ env.CLANG_PATH }}:$PATH"
           export ARCH=arm64
@@ -269,16 +285,6 @@ jobs:
           cd kernel_tree
           make O=out vendor/munch_defconfig
           make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
-
-          scripts/config --file out/.config \
-          -e KSU \
-          -e KSU_MANUAL_HOOK \
-          -e KPROBES \
-          -e HAVE_KPROBES \
-          -e KPROBE_EVENTS \
-          -e KPM \
-          -e KALLSYMS \
-          -e KALLSYMS_ALL
           
           if [[ "${{ matrix.branch }}" == "OCUV" ]]; then
             if [[ "${{ matrix.kernel }}" == 1 ]]; then
@@ -299,7 +305,17 @@ jobs:
             elif [[ "${{ matrix.kernel }}" == 6 ]]; then
               mv out/arch/arm64/boot/dtb.img ../munch-slightuc-uv-dtb
             fi
+          elif [[ "${{ matrix.variant }}" == "noksu" ]]; then
+            if [[ "${{ matrix.kernel }}" == 3 ]]; then
+              cp out/arch/arm64/boot/Image ../Image
+              mv out/arch/arm64/boot/dtb.img ../munch-normal-noksu-dtb
+            elif [[ "${{ matrix.kernel }}" == 4 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-effcpu-noksu-dtb
+            elif [[ "${{ matrix.kernel }}" == 6 ]]; then
+              mv out/arch/arm64/boot/dtb.img ../munch-slightuc-noksu-dtb
+            fi
           else
+            # gpustk variant
             if [[ "${{ matrix.kernel }}" == 3 ]]; then
               cp out/arch/arm64/boot/Image ../Image
               mv out/arch/arm64/boot/dtb.img ../munch-normal-gpustk-dtb
@@ -309,21 +325,10 @@ jobs:
               mv out/arch/arm64/boot/dtb.img ../munch-slightuc-gpustk-dtb
             fi
           fi
-          
-      - name: Apply KPM Patch
-        if: matrix.branch != 'NOKSU' && matrix.branch != 'OCUV'
-        run: |
-          set -x
-          
-          cd kernel_tree/out/arch/arm64/boot
-          echo "🔧 Applying KPM patch..."
-          curl -LSs "https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/download/0.12.0/patch_linux" -o patch
-          chmod +x patch
-          ./patch
 
       - name: Upload OCUV Kernel 1 Components
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 1 && matrix.branch == 'OCUV'
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 1 && matrix.branch == 'OCUV'
         with:
           name: ocuv-kernel-1-components
           path: |
@@ -332,7 +337,7 @@ jobs:
 
       - name: Upload OCUV Kernel 2 Components
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 2 && matrix.branch == 'OCUV'
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 2 && matrix.branch == 'OCUV'
         with:
           name: ocuv-kernel-2-components
           path: |
@@ -341,7 +346,7 @@ jobs:
 
       - name: Upload OCUV Kernel 5 Components
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 5 && matrix.branch == 'OCUV'
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 5 && matrix.branch == 'OCUV'
         with:
           name: ocuv-kernel-5-components
           path: |
@@ -349,7 +354,7 @@ jobs:
 
       - name: Upload NEXT UV Kernel 3 (with Image)
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 3 && matrix.branch == 'NEXT' && matrix.variant == 'uv'
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 3 && matrix.branch == 'NEXT' && matrix.variant == 'uv'
         with:
           name: next-uv-kernel-3-base
           path: |
@@ -358,7 +363,7 @@ jobs:
 
       - name: Upload NEXT UV Kernel 4
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 4 && matrix.branch == 'NEXT' && matrix.variant == 'uv'
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 4 && matrix.branch == 'NEXT' && matrix.variant == 'uv'
         with:
           name: next-uv-kernel-4
           path: |
@@ -366,7 +371,7 @@ jobs:
 
       - name: Upload NEXT UV Kernel 6
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 6 && matrix.branch == 'NEXT' && matrix.variant == 'uv'
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 6 && matrix.branch == 'NEXT' && matrix.variant == 'uv'
         with:
           name: next-uv-kernel-6
           path: |
@@ -374,7 +379,7 @@ jobs:
 
       - name: Upload Branch Kernel 3 (with Image) - GPUSTK
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 3 && matrix.variant == 'gpustk'
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 3 && matrix.variant == 'gpustk'
         with:
           name: kernel-${{ matrix.branch }}-3-gpustk
           path: |
@@ -383,7 +388,7 @@ jobs:
 
       - name: Upload Branch Kernel 4 - GPUSTK
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 4 && matrix.variant == 'gpustk'
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 4 && matrix.variant == 'gpustk'
         with:
           name: kernel-${{ matrix.branch }}-4-gpustk
           path: |
@@ -391,82 +396,169 @@ jobs:
 
       - name: Upload Branch Kernel 6 - GPUSTK
         uses: actions/upload-artifact@v4
-        if: matrix.kernel == 6 && matrix.variant == 'gpustk'
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 6 && matrix.variant == 'gpustk'
         with:
           name: kernel-${{ matrix.branch }}-6-gpustk
           path: |
             munch-slightuc-gpustk-dtb
 
+      - name: Upload Branch Kernel 3 (with Image) - NOKSU
+        uses: actions/upload-artifact@v4
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 3 && matrix.variant == 'noksu'
+        with:
+          name: kernel-${{ matrix.branch }}-3-noksu
+          path: |
+            Image
+            munch-normal-noksu-dtb
+
+      - name: Upload Branch Kernel 4 - NOKSU
+        uses: actions/upload-artifact@v4
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 4 && matrix.variant == 'noksu'
+        with:
+          name: kernel-${{ matrix.branch }}-4-noksu
+          path: |
+            munch-effcpu-noksu-dtb
+
+      - name: Upload Branch Kernel 6 - NOKSU
+        uses: actions/upload-artifact@v4
+        if: env.SHOULD_BUILD == 'true' && matrix.kernel == 6 && matrix.variant == 'noksu'
+        with:
+          name: kernel-${{ matrix.branch }}-6-noksu
+          path: |
+            munch-slightuc-noksu-dtb
+
   package_anykernel:
     needs: build
     strategy:
       matrix:
-        branch: [SUSFS, NEXT, NOKSU]
+        branch: [NEXT, NOKSU]
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check Package Requirements
+        id: package_check
+        run: |
+          SHOULD_PACKAGE="false"
+          SCOPE="${{ github.event.inputs.BUILD_SCOPE }}"
+          MATRIX_BRANCH="${{ matrix.branch }}"
+          
+          if [[ "$MATRIX_BRANCH" == "NEXT" ]]; then
+            if [[ "$SCOPE" == "ALL" ]] || [[ "$SCOPE" == "NEXT" ]]; then
+               SHOULD_PACKAGE="true"
+            fi
+          elif [[ "$MATRIX_BRANCH" == "NOKSU" ]]; then
+            if [[ "$SCOPE" == "ALL" ]] || [[ "$SCOPE" == "NOKSU" ]]; then
+               SHOULD_PACKAGE="true"
+            fi
+          fi
+          
+          echo "SHOULD_PACKAGE=$SHOULD_PACKAGE" >> $GITHUB_ENV
+          echo "Package status for $MATRIX_BRANCH: $SHOULD_PACKAGE"
+
       - name: Download OCUV Kernel 1 Components
+        if: env.SHOULD_PACKAGE == 'true'
         uses: actions/download-artifact@v4
         with:
           name: ocuv-kernel-1-components
           path: ocuv-kernel-1
 
       - name: Download OCUV Kernel 2 Components
+        if: env.SHOULD_PACKAGE == 'true'
         uses: actions/download-artifact@v4
         with:
           name: ocuv-kernel-2-components
           path: ocuv-kernel-2
 
       - name: Download OCUV Kernel 5 Components
+        if: env.SHOULD_PACKAGE == 'true'
         uses: actions/download-artifact@v4
         with:
           name: ocuv-kernel-5-components
           path: ocuv-kernel-5
 
       - name: Download NEXT UV Kernel 3 (with Image)
+        if: env.SHOULD_PACKAGE == 'true'
         uses: actions/download-artifact@v4
         with:
           name: next-uv-kernel-3-base
           path: next-uv-kernel-3
 
       - name: Download NEXT UV Kernel 4
+        if: env.SHOULD_PACKAGE == 'true'
         uses: actions/download-artifact@v4
         with:
           name: next-uv-kernel-4
           path: next-uv-kernel-4
 
       - name: Download NEXT UV Kernel 6
+        if: env.SHOULD_PACKAGE == 'true'
         uses: actions/download-artifact@v4
         with:
           name: next-uv-kernel-6
           path: next-uv-kernel-6
 
       - name: Download Branch Kernel 3 (with Image) - GPUSTK
+        if: env.SHOULD_PACKAGE == 'true' && matrix.branch == 'NEXT'
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-3-gpustk
+          name: kernel-NEXT-3-gpustk
           path: branch-kernel-3-gpustk
 
       - name: Download Branch Kernel 4 - GPUSTK
+        if: env.SHOULD_PACKAGE == 'true' && matrix.branch == 'NEXT'
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-4-gpustk
+          name: kernel-NEXT-4-gpustk
           path: branch-kernel-4-gpustk
 
       - name: Download Branch Kernel 6 - GPUSTK
+        if: env.SHOULD_PACKAGE == 'true' && matrix.branch == 'NEXT'
         uses: actions/download-artifact@v4
         with:
-          name: kernel-${{ matrix.branch }}-6-gpustk
+          name: kernel-NEXT-6-gpustk
           path: branch-kernel-6-gpustk
 
+      - name: Download Branch Kernel 3 (with Image) - NOKSU
+        if: env.SHOULD_PACKAGE == 'true' && matrix.branch == 'NOKSU'
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-NEXT-3-noksu
+          path: branch-kernel-3-noksu
+
+      - name: Download Branch Kernel 4 - NOKSU
+        if: env.SHOULD_PACKAGE == 'true' && matrix.branch == 'NOKSU'
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-NEXT-4-noksu
+          path: branch-kernel-4-noksu
+
+      - name: Download Branch Kernel 6 - NOKSU
+        if: env.SHOULD_PACKAGE == 'true' && matrix.branch == 'NOKSU'
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-NEXT-6-noksu
+          path: branch-kernel-6-noksu
+
       - name: Clone AnyKernel3
+        if: env.SHOULD_PACKAGE == 'true'
         run: git clone --recursive --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b fusionX AnyKernel3-${{ matrix.branch }}
 
       - name: Create Folder Structure and Organize Files
+        if: env.SHOULD_PACKAGE == 'true'
         run: |
           mkdir -p AnyKernel3-${{ matrix.branch }}/dtbs/{ocuv,uv,stock}
           
-          cp branch-kernel-3-gpustk/Image AnyKernel3-${{ matrix.branch }}/
+          if [[ "${{ matrix.branch }}" == "NOKSU" ]]; then
+            cp branch-kernel-3-noksu/Image AnyKernel3-${{ matrix.branch }}/
+            cp branch-kernel-3-noksu/munch-normal-noksu-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
+            cp branch-kernel-4-noksu/munch-effcpu-noksu-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
+            cp branch-kernel-6-noksu/munch-slightuc-noksu-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
+          else
+            cp branch-kernel-3-gpustk/Image AnyKernel3-${{ matrix.branch }}/
+            cp branch-kernel-3-gpustk/munch-normal-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
+            cp branch-kernel-4-gpustk/munch-effcpu-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
+            cp branch-kernel-6-gpustk/munch-slightuc-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
+          fi
           
           cp ocuv-kernel-1/munch-aosp-dtbo.img AnyKernel3-${{ matrix.branch }}/
           cp ocuv-kernel-2/munch-miui-dtbo.img AnyKernel3-${{ matrix.branch }}/
@@ -477,12 +569,9 @@ jobs:
           cp next-uv-kernel-3/munch-normal-uv-dtb AnyKernel3-${{ matrix.branch }}/dtbs/uv/
           cp next-uv-kernel-4/munch-effcpu-uv-dtb AnyKernel3-${{ matrix.branch }}/dtbs/uv/
           cp next-uv-kernel-6/munch-slightuc-uv-dtb AnyKernel3-${{ matrix.branch }}/dtbs/uv/
-          
-          cp branch-kernel-3-gpustk/munch-normal-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
-          cp branch-kernel-4-gpustk/munch-effcpu-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
-          cp branch-kernel-6-gpustk/munch-slightuc-gpustk-dtb AnyKernel3-${{ matrix.branch }}/dtbs/stock/
 
       - name: Define ZIP Name
+        if: env.SHOULD_PACKAGE == 'true'
         run: |
           export TZ='Asia/Manila'
           COMPILED_DATE=$(date +%Y%m%d)
@@ -494,11 +583,13 @@ jobs:
           echo "KERNEL_TYPE=${{ matrix.branch }}" >> $GITHUB_ENV
 
       - name: Create ZIP file
+        if: env.SHOULD_PACKAGE == 'true'
         run: |
           cd AnyKernel3-${{ matrix.branch }}
           zip -r9 ../${{ env.ZIP_NAME }}.zip * -x .git* .github*
 
       - name: Upload Flashable Kernel Zip
+        if: env.SHOULD_PACKAGE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ZIP_NAME }}
@@ -522,9 +613,7 @@ jobs:
           CLANG_TOOLCHAIN: ${{ github.event.inputs.CLANG_TOOLCHAIN }}
           LTO_CONFIG: ${{ github.event.inputs.USE_LTO_THIN }}
           OPLUS_FEATURES: ${{ github.event.inputs.OPLUS_FEATURES }}
-          KERNEL_TREE_BRANCH_1: ${{ github.event.inputs.KERNEL_TREE_BRANCH_1 }}
-          KERNEL_TREE_BRANCH_2: ${{ github.event.inputs.KERNEL_TREE_BRANCH_2 }}
-          KERNEL_TREE_BRANCH_3: ${{ github.event.inputs.KERNEL_TREE_BRANCH_3 }}
+          KERNEL_TREE_BRANCH: ${{ github.event.inputs.KERNEL_TREE_BRANCH }}
           BUILD_START_TIME: ${{ github.run_started_at }}
           VERSION: ${{ github.event.inputs.VERSION }}
         run: |
@@ -570,20 +659,17 @@ jobs:
               exit(1)
               
           if not zip_files:
-              send_telegram_message(bot_token, chat_id, "❌ <b>Build Failed!</b>")
+              send_telegram_message(bot_token, chat_id, "❌ <b>Build Failed or Skipped!</b>")
               exit(1)
 
           for zip_file in zip_files:
               file_name = os.path.basename(zip_file)
               
-              if "SUSFS" in file_name:
-                  branch_info = os.environ.get('KERNEL_TREE_BRANCH_1', 'susfs1')
-                  build_type = "SUSFS"
-              elif "NEXT" in file_name:
-                  branch_info = os.environ.get('KERNEL_TREE_BRANCH_2', 'next1')
+              if "NEXT" in file_name:
+                  branch_info = os.environ.get('KERNEL_TREE_BRANCH', 'next1')
                   build_type = "NEXT"
               elif "NOKSU" in file_name:
-                  branch_info = os.environ.get('KERNEL_TREE_BRANCH_3', 'noksu1')
+                  branch_info = os.environ.get('KERNEL_TREE_BRANCH', 'next1')
                   build_type = "NOKSU"
               else:
                   branch_info = "unknown"
