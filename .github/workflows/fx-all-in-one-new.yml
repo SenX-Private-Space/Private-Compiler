@@ -215,14 +215,6 @@ jobs:
             sed -i -e 's/CONFIG_LOCALVERSION="-FusionX-2.1"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
           fi
 
-      - name: Disable KSU (For NOKSU Variant)
-        if: env.SHOULD_BUILD == 'true' && matrix.variant == 'noksu'
-        run: |
-          cd kernel_tree
-          echo "🚫 Disabling KernelSU Config..."
-          sed -i '/CONFIG_KSU/d' arch/arm64/configs/vendor/munch_defconfig
-          echo "# CONFIG_KSU is not set" >> arch/arm64/configs/vendor/munch_defconfig
-
       - name: Change LTO Configuration to THIN
         if: env.SHOULD_BUILD == 'true' && github.event.inputs.USE_LTO_THIN == 'true'
         run: |
@@ -272,6 +264,17 @@ jobs:
           sed -i '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
           sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
           sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
+
+      # MOVED HERE: This ensures KSU is disabled AFTER patches are applied
+      - name: Disable KSU (For NOKSU Variant)
+        if: env.SHOULD_BUILD == 'true' && matrix.variant == 'noksu'
+        run: |
+          cd kernel_tree
+          echo "🚫 Disabling KernelSU Config..."
+          # Remove any existing CONFIG_KSU entry (from source or patch scripts)
+          sed -i '/CONFIG_KSU/d' arch/arm64/configs/vendor/munch_defconfig
+          # Explicitly set it to not set
+          echo "# CONFIG_KSU is not set" >> arch/arm64/configs/vendor/munch_defconfig
 
       - name: Build Kernel
         if: env.SHOULD_BUILD == 'true'
@@ -650,53 +653,4 @@ jobs:
           oplus = 'YES' if os.environ.get('OPLUS_FEATURES') == 'yes' else 'NO'
           build_start_time = os.environ.get('BUILD_START_TIME')
           version = os.environ.get('VERSION', '2.x')
-          manila_tz = timezone(timedelta(hours=8))
-          build_date = datetime.now(manila_tz).strftime('%Y-%m-%d %H:%M:%S')
-          zip_files = glob.glob('artifacts/**/*.zip', recursive=True)
-          
-          if not bot_token or not chat_id:
-              print("Missing Telegram credentials")
-              exit(1)
-              
-          if not zip_files:
-              send_telegram_message(bot_token, chat_id, "❌ <b>Build Failed or Skipped!</b>")
-              exit(1)
-
-          for zip_file in zip_files:
-              file_name = os.path.basename(zip_file)
-              
-              if "NEXT" in file_name:
-                  branch_info = os.environ.get('KERNEL_TREE_BRANCH', 'next1')
-                  build_type = "NEXT"
-              elif "NOKSU" in file_name:
-                  branch_info = os.environ.get('KERNEL_TREE_BRANCH', 'next1')
-                  build_type = "NOKSU"
-              else:
-                  branch_info = "unknown"
-                  build_type = "Unknown"
-              
-              caption = f"""<pre>
-            <b> FusionX Build Complete! </b>
-            ==============================
-            <b> Date:</b>        {build_date}
-            <b> Branch:</b>      {branch_info}
-            <b> Version:</b>     {version}
-            <b> Lto:</b>         {lto}
-            <b> Clang:</b>       {clang}
-            <b> OPLUS:</b>       {oplus}
-            <b> Build Type:</b>  {build_type}
-            ==============================
-            </pre>"""
-              
-              try:
-                  result = send_telegram_file(bot_token, chat_id, caption, zip_file)
-                  if result.get('ok'):
-                      print(f"✅ Successfully sent {file_name}")
-                  else:
-                      print(f"❌ Failed to send {file_name}: {result}")
-              except Exception as e:
-                  print(f"❌ Error sending {file_name}: {str(e)}")
-
-          EOF
-
-          python3 send_telegram.py
+          manila_tz = timezone(
