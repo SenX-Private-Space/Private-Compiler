@@ -215,6 +215,15 @@ jobs:
             sed -i -e 's/CONFIG_LOCALVERSION="-FusionX-2.1"/CONFIG_LOCALVERSION="${{ github.event.inputs.CUSTOM_SED }}"/' arch/arm64/configs/vendor/munch_defconfig
           fi
 
+      # MATCHING INSPO: Disable KSU *before* other actions if variant is NOKSU
+      - name: Disable KSU (For NOKSU Variant)
+        if: env.SHOULD_BUILD == 'true' && matrix.variant == 'noksu'
+        run: |
+          cd kernel_tree
+          echo "🚫 Disabling KernelSU Config..."
+          sed -i '/CONFIG_KSU/d' arch/arm64/configs/vendor/munch_defconfig
+          echo "# CONFIG_KSU is not set" >> arch/arm64/configs/vendor/munch_defconfig
+
       - name: Change LTO Configuration to THIN
         if: env.SHOULD_BUILD == 'true' && github.event.inputs.USE_LTO_THIN == 'true'
         run: |
@@ -247,8 +256,9 @@ jobs:
           cd kernel_tree
           patch -p1 -f < "0001-stock-gpu-freq.patch"
 
-      - name: Apply Patches (NEXT only)
-        if: env.SHOULD_BUILD == 'true' && matrix.branch != 'OCUV'
+      # MATCHING INSPO: Skip Patches if variant is NOKSU
+      - name: Apply Patches (NEXT only - SKIPPED FOR NOKSU)
+        if: env.SHOULD_BUILD == 'true' && matrix.branch != 'OCUV' && matrix.variant != 'noksu'
         run: |
           cd kernel_tree
           bash nextpatch.sh
@@ -264,17 +274,6 @@ jobs:
           sed -i '/<3187200>;/d' arch/arm64/boot/dts/vendor/qcom/kona.dtsi
           sed -i -e 's/qcom,mdss-pan-physical-width-dimension = <70>;/qcom,mdss-pan-physical-width-dimension = <695>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
           sed -i -e 's/qcom,mdss-pan-physical-height-dimension = <155>;/qcom,mdss-pan-physical-height-dimension = <1546>;/' arch/arm64/boot/dts/vendor/qcom/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi
-
-      # MOVED HERE: This ensures KSU is disabled AFTER patches are applied
-      - name: Disable KSU (For NOKSU Variant)
-        if: env.SHOULD_BUILD == 'true' && matrix.variant == 'noksu'
-        run: |
-          cd kernel_tree
-          echo "🚫 Disabling KernelSU Config..."
-          # Remove any existing CONFIG_KSU entry (from source or patch scripts)
-          sed -i '/CONFIG_KSU/d' arch/arm64/configs/vendor/munch_defconfig
-          # Explicitly set it to not set
-          echo "# CONFIG_KSU is not set" >> arch/arm64/configs/vendor/munch_defconfig
 
       - name: Build Kernel
         if: env.SHOULD_BUILD == 'true'
