@@ -1,4 +1,4 @@
-name: FusionX-ALL-IN-ONE-2
+name: test
 on:
   pull_request:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
         type: choice
         options:
           - stable-susfs
-          - wip-susfs
+          - bkp
       KERNEL_TREE_BRANCH_2:
         description: 'Kernel Tree Branch (NEXT)'
         default: 'wip-next'
