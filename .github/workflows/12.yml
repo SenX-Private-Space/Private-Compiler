@@ -26,7 +26,7 @@ on:
         options:
         - neutron
         - aosp clang 21
-        - aosp clang 22
+        - aosp clang 20
       USE_LTO_THIN:
         description: 'Use LTO THIN instead of FULL'
         default: 'false'
@@ -50,7 +50,7 @@ jobs:
           path: |
             clang-neutron
             clang-aosp-21
-            clang-aosp-22
+            clang-aosp-20
           key: clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ hashFiles('**/clang-version') }}
           restore-keys: |
             clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-
@@ -62,23 +62,28 @@ jobs:
             wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/508ea7dd0d8f681904d0422e98af9613aaabf180/clang-r574158.tar.gz -O clang.tar.gz
             mkdir -p clang-aosp-21
             tar -xf clang.tar.gz -C clang-aosp-21
-          elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 22" ]]; then
-            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/167e11df8c330bced88cdf5808f61f41d9eab330/clang-r584948.tar.gz -O clang.tar.gz
-            mkdir -p clang-aosp-22
-            tar -xf clang.tar.gz -C clang-aosp-22
+            echo "aosp-21-r574158" > clang-version
+            
+          elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 20" ]]; then
+            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
+            mkdir -p clang-aosp-20
+            tar -xf clang.tar.gz -C clang-aosp-20
+            echo "aosp-20-r547379" > clang-version
+            
           else
             wget https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst -O clang.tar.zst
             mkdir -p clang-neutron
             unzstd -d clang.tar.zst
             tar -xf clang.tar -C clang-neutron
+            echo "neutron-10032024" > clang-version
           fi
 
       - name: Set Clang Path
         run: |
           if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
             echo "CLANG_PATH=$(pwd)/clang-aosp-21/bin" >> $GITHUB_ENV
-          elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 22" ]]; then
-            echo "CLANG_PATH=$(pwd)/clang-aosp-22/bin" >> $GITHUB_ENV
+          elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 20" ]]; then
+            echo "CLANG_PATH=$(pwd)/clang-aosp-20/bin" >> $GITHUB_ENV
           else
             echo "CLANG_PATH=$(pwd)/clang-neutron/bin" >> $GITHUB_ENV
           fi
@@ -153,8 +158,6 @@ jobs:
       - name: Organize Files
         run: |
           # Copying Image and DTBs to the ROOT of AnyKernel3
-          # This is the standard behavior for the 'main' branch of most AK3 repos
-          
           cp Image AnyKernel3/
           
           if [ -f dtb ]; then 
