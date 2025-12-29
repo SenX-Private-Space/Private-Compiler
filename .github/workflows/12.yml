@@ -1,0 +1,272 @@
+name: FusionX-PURE-BUILD
+on:
+  workflow_dispatch:
+    inputs:
+      KERNEL_TREE:
+        description: 'Kernel Tree'
+        default: 'https://github.com/SenseiiX/fusionX_sm8250'
+        required: true
+      KERNEL_BRANCH:
+        description: 'Kernel Branch'
+        default: 'wip-next'
+        required: true
+      VERSION:
+        description: 'Zip Version'
+        default: 'Pure-1.0'
+        required: false
+      ANYKERNEL_URL:
+        description: 'AnyKernel Url'
+        default: 'https://github.com/kvsnr113/AnyKernel3'
+        required: false
+      CLANG_TOOLCHAIN:
+        description: 'Clang toolchain selection'
+        default: 'aosp clang 21'
+        required: true
+        type: choice
+        options:
+        - neutron
+        - aosp clang 21
+        - aosp clang 22
+      USE_LTO_THIN:
+        description: 'Use LTO THIN instead of FULL'
+        default: 'false'
+        required: false
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      BRANCH_NAME: "PURE" 
+
+    steps:
+      - name: Install Dependencies
+        run: sudo apt install flex libncurses6
+
+      - name: Cache Clang Toolchain
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: |
+            clang-neutron
+            clang-aosp-21
+            clang-aosp-22
+          key: clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-${{ hashFiles('**/clang-version') }}
+          restore-keys: |
+            clang-toolchain-${{ github.event.inputs.CLANG_TOOLCHAIN }}-
+
+      - name: Download & Extract Clang (If not cached)
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        run: |
+          if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
+            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/508ea7dd0d8f681904d0422e98af9613aaabf180/clang-r574158.tar.gz -O clang.tar.gz
+            mkdir -p clang-aosp-21
+            tar -xf clang.tar.gz -C clang-aosp-21
+          elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 22" ]]; then
+            wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/167e11df8c330bced88cdf5808f61f41d9eab330/clang-r584948.tar.gz -O clang.tar.gz
+            mkdir -p clang-aosp-22
+            tar -xf clang.tar.gz -C clang-aosp-22
+          else
+            wget https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst -O clang.tar.zst
+            mkdir -p clang-neutron
+            unzstd -d clang.tar.zst
+            tar -xf clang.tar -C clang-neutron
+          fi
+
+      - name: Set Clang Path
+        run: |
+          if [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 21" ]]; then
+            echo "CLANG_PATH=$(pwd)/clang-aosp-21/bin" >> $GITHUB_ENV
+          elif [[ "${{ github.event.inputs.CLANG_TOOLCHAIN }}" == "aosp clang 22" ]]; then
+            echo "CLANG_PATH=$(pwd)/clang-aosp-22/bin" >> $GITHUB_ENV
+          else
+            echo "CLANG_PATH=$(pwd)/clang-neutron/bin" >> $GITHUB_ENV
+          fi
+
+      - name: Checkout Kernel
+        run: |
+          git clone --depth=1 --branch "${{ github.event.inputs.KERNEL_BRANCH }}" "${{ github.event.inputs.KERNEL_TREE }}" kernel_tree
+
+      - name: Change LTO Configuration to THIN
+        if: github.event.inputs.USE_LTO_THIN == 'true'
+        run: |
+          cd kernel_tree
+          echo "Changing LTO configuration from FULL to THIN..."
+          sed -i -e '
+          /CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y/c\CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN=y
+          /CONFIG_HAS_LTO_CLANG=y/c\CONFIG_HAS_LTO_CLANG=y
+          /# CONFIG_LTO_NONE is not set/c\# CONFIG_LTO_NONE is not set
+          /CONFIG_LTO_CLANG_FULL=y/c\# CONFIG_LTO_CLANG_FULL is not set
+          /# CONFIG_LTO_CLANG_THIN is not set/c\CONFIG_LTO_CLANG_THIN=y
+          ' arch/arm64/configs/vendor/munch_defconfig
+
+      - name: Apply Patches (nextpatch.sh)
+        run: |
+          cd kernel_tree
+          if [ -f "nextpatch.sh" ]; then
+            chmod +x nextpatch.sh
+            bash nextpatch.sh
+          else
+            echo "⚠️ nextpatch.sh not found, skipping..."
+          fi
+
+      - name: Build Kernel
+        run: |
+          export PATH="${{ env.CLANG_PATH }}:$PATH"
+          export ARCH=arm64
+          export SUBARCH=ARM64
+          export KBUILD_BUILD_USER="senx"
+          export KBUILD_BUILD_HOST="ubuntu"
+          export KBUILD_BUILD_TIMESTAMP="$(TZ=UTC-7 date)"
+          
+          cd kernel_tree
+          make O=out vendor/munch_defconfig
+          make O=out CC=clang -j$(nproc --all) CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1
+          
+          # Move artifacts for upload
+          cp out/arch/arm64/boot/Image ../Image
+          find out/arch/arm64/boot/dts/vendor -name "*.dtb" -exec cp {} ../dtb \; 2>/dev/null || mv out/arch/arm64/boot/dtb.img ../dtb
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then cp out/arch/arm64/boot/dtbo.img ../dtbo.img; fi
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-artifacts
+          path: |
+            Image
+            dtb
+            dtbo.img
+
+  package_anykernel:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-artifacts
+
+      - name: Clone AnyKernel3
+        run: git clone --depth=1 ${{ github.event.inputs.ANYKERNEL_URL }} -b main AnyKernel3
+
+      - name: Organize Files
+        run: |
+          # Copying Image and DTBs to the ROOT of AnyKernel3
+          # This is the standard behavior for the 'main' branch of most AK3 repos
+          
+          cp Image AnyKernel3/
+          
+          if [ -f dtb ]; then 
+             cp dtb AnyKernel3/dtb
+          fi
+          
+          if [ -f dtbo.img ]; then 
+             cp dtbo.img AnyKernel3/
+          fi
+
+      - name: Zip Kernel
+        run: |
+          export TZ='Asia/Manila'
+          COMPILED_DATE=$(date +%Y%m%d)
+          ZIP_NAME="FusionX-PURE-${{ github.event.inputs.VERSION }}-$COMPILED_DATE"
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          
+          cd AnyKernel3
+          zip -r9 ../$ZIP_NAME.zip * -x .git* .github*
+
+      - name: Upload Flashable Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_NAME }}.zip
+
+  telegram_notification:
+    needs: package_anykernel
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Download all ZIP artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Send Telegram notifications
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CLANG_TOOLCHAIN: ${{ github.event.inputs.CLANG_TOOLCHAIN }}
+          LTO_CONFIG: ${{ github.event.inputs.USE_LTO_THIN }}
+          VERSION: ${{ github.event.inputs.VERSION }}
+        run: |
+          cat > send_telegram.py << 'EOF'
+          import os
+          import requests
+          import glob
+          from datetime import datetime, timezone, timedelta
+
+          def send_telegram_file(bot_token, chat_id, message, file_path):
+              url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+              with open(file_path, 'rb') as f:
+                  files = {'document': f}
+                  data = {
+                      'chat_id': chat_id,
+                      'caption': message,
+                      'parse_mode': 'HTML'
+                  }
+                  response = requests.post(url, data=data, files=files)
+              return response.json()
+
+          def send_telegram_message(bot_token, chat_id, message):
+              url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+              data = {
+                  'chat_id': chat_id,
+                  'text': message,
+                  'parse_mode': 'HTML'
+              }
+              return requests.post(url, data=data).json()
+
+          bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+          chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+          clang = os.environ.get('CLANG_TOOLCHAIN', 'aosp')
+          lto = 'THIN' if os.environ.get('LTO_CONFIG') == 'true' else 'FULL'
+          version = os.environ.get('VERSION', '1.0')
+          
+          manila_tz = timezone(timedelta(hours=8))
+          build_date = datetime.now(manila_tz).strftime('%Y-%m-%d %H:%M:%S')
+          zip_files = glob.glob('artifacts/**/*.zip', recursive=True)
+          
+          if not bot_token or not chat_id:
+              print("Missing Telegram credentials")
+              exit(1)
+              
+          if not zip_files:
+              send_telegram_message(bot_token, chat_id, "❌ <b>Build Failed or Skipped!</b>")
+              exit(1)
+
+          for zip_file in zip_files:
+              file_name = os.path.basename(zip_file)
+              
+              caption = f"""<pre>
+            <b> FusionX PURE Build </b>
+            ==============================
+            <b> Date:</b>        {build_date}
+            <b> Version:</b>     {version}
+            <b> LTO:</b>         {lto}
+            <b> Clang:</b>       {clang}
+            <b> Type:</b>        PURE
+            ==============================
+            </pre>"""
+              
+              try:
+                  result = send_telegram_file(bot_token, chat_id, caption, zip_file)
+                  if result.get('ok'):
+                      print(f"✅ Successfully sent {file_name}")
+                  else:
+                      print(f"❌ Failed to send {file_name}")
+              except Exception as e:
+                  print(f"❌ Error sending {file_name}: {str(e)}")
+          EOF
+
+          python3 send_telegram.py
