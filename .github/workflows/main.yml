@@ -14,7 +14,7 @@ on:
         type: choice
         options:
           - stable-susfs
-          - bkp
+          - wip-susfs
       KERNEL_TREE_BRANCH_2:
         description: 'Kernel Tree Branch (NEXT)'
         default: 'wip-next'
@@ -22,7 +22,7 @@ on:
         type: choice
         options:
           - stable-next
-          - wip-next
+          - pure
       KERNEL_TREE_BRANCH_3:
         description: 'Kernel Tree Branch (NOKSU)'
         default: 'wip-noksu'
