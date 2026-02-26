@@ -1,11 +1,11 @@
-name: FusionX-RKSU
+name: FusionX-ALL-IN-ONE-232
 on:
   pull_request:
   workflow_dispatch:
     inputs:
       KERNEL_TREE_1:
         description: 'Kernel Tree'
-        default: 'https://github.com/SenseiiX/fusionX_sm8250'
+        default: 'https://github.com/SenX-Private-Space/fusionX_sm8250'
         required: true
       KERNEL_TREE_BRANCH_1:
         description: 'Kernel Tree Branch (RKSU)'
@@ -17,12 +17,12 @@ on:
           - wip-rksu
       KERNEL_TREE_BRANCH_2:
         description: 'Kernel Tree Branch (NEXT)'
-        default: 'wip-rksu'
+        default: 'wip-next'
         required: false
         type: choice
         options:
-          - stable-rksu
-          - wip-rksu
+          - stable-next
+          - wip-next
       KERNEL_TREE_BRANCH_3:
         description: 'Kernel Tree Branch (NOKSU)'
         default: 'wip-noksu'
