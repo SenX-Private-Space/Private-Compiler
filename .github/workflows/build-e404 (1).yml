@@ -1,0 +1,442 @@
+name: E404 Kernel - Munch
+
+on:
+  workflow_dispatch:
+    inputs:
+      KERNEL_TREE:
+        description: 'Kernel Repository'
+        default: 'https://github.com/SenX-Project/xiaomi_sm8250_kernel_e404'
+        required: true
+      KERNEL_TREE_BRANCH:
+        description: 'Kernel Branch'
+        required: true
+        default: 'main'
+        type: choice
+        options:
+          - 'main'
+          - 'bpf'
+      ANYKERNEL3_REPO:
+        description: 'AnyKernel3 Repository'
+        default: 'https://github.com/kvsnr113/AnyKernel3'
+        required: true
+      ANYKERNEL3_BRANCH:
+        description: 'AnyKernel3 Branch'
+        required: true
+        default: 'main'
+      BUILD_TYPE:
+        description: 'Build Type Tag'
+        required: true
+        default: 'Weekly'
+        type: choice
+        options:
+          - 'Weekly'
+          - 'Weekly-BPF'
+      TOOLCHAIN:
+        description: 'Toolchain'
+        required: true
+        default: 'llvm'
+        type: choice
+        options:
+          - 'aosp'
+          - 'neutron'
+          - 'llvm'
+          - 'lilium'
+          - 'gcc'
+      UPLOAD_TO_RELEASE:
+        description: 'Upload to Release'
+        type: boolean
+        default: false
+      RELEASE_REPO:
+        description: 'Release Repository (user/repo)'
+        default: 'your-username/your-releases'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout Actions Repository
+      uses: actions/checkout@v4
+
+    - name: Generate Build Date
+      id: date
+      run: |
+        echo "build_date=$(date +"%y%m%d")" >> $GITHUB_OUTPUT
+        echo "build_time=$(date +"%d %b %Y, %H:%M:%S")" >> $GITHUB_OUTPUT
+        echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+
+    - name: Display Build Configuration
+      run: |
+        echo "::group::Build Configuration"
+        echo "Device      : MUNCH (Redmi K40 Pro / POCO F3)"
+        echo "Kernel Tree : ${{ github.event.inputs.KERNEL_TREE }}"
+        echo "Branch      : ${{ github.event.inputs.KERNEL_TREE_BRANCH }}"
+        echo "Build Type  : ${{ github.event.inputs.BUILD_TYPE }}"
+        echo "Toolchain   : ${{ github.event.inputs.TOOLCHAIN }}"
+        echo "Upload      : ${{ github.event.inputs.UPLOAD_TO_RELEASE }}"
+        echo "::endgroup::"
+
+    - name: Initialize Workspace
+      id: workspace
+      run: |
+        mkdir -p workspace
+        echo "workspace=$(pwd)/workspace" >> $GITHUB_OUTPUT
+
+    - name: Setup Build Environment
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y \
+          build-essential \
+          bc \
+          bison \
+          flex \
+          libssl-dev \
+          libncurses-dev \
+          libelf-dev \
+          libudev-dev \
+          libpci-dev \
+          libiberty-dev \
+          autoconf \
+          dwarves \
+          llvm \
+          lld \
+          zip \
+          unzip \
+          curl \
+          wget \
+          git \
+          ccache \
+          python3 \
+          python3-pip \
+          ca-certificates
+
+    - name: Cache Toolchain
+      id: cache-tc
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.workspace.outputs.workspace }}/toolchain
+        key: toolchain-${{ github.event.inputs.TOOLCHAIN }}-v1
+        restore-keys: |
+          toolchain-${{ github.event.inputs.TOOLCHAIN }}-
+
+    - name: Download Toolchain
+      if: steps.cache-tc.outputs.cache-hit != 'true'
+      run: |
+        TC="${{ github.event.inputs.TOOLCHAIN }}"
+        mkdir -p toolchain
+
+        case "$TC" in
+          aosp)
+            echo "Downloading AOSP Clang..."
+            wget -q --show-progress \
+              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android15-release/clang-r510928.tar.gz \
+              -O clang.tar.gz
+            mkdir toolchain/bin
+            tar -xf clang.tar.gz -C toolchain
+            rm -f clang.tar.gz
+            ;;
+          neutron)
+            echo "Downloading Neutron Clang..."
+            git clone --depth=1 https://github.com/Neutron-Toolchains/clang-build-catalogue neutron-catalogue
+            NEUTRON_URL=$(python3 neutron-catalogue/ntc dlinfo --clang-version=latest --print-url)
+            wget -q --show-progress "$NEUTRON_URL" -O clang.tar.zst
+            mkdir toolchain
+            tar --use-compress-program=unzstd -xf clang.tar.zst -C toolchain
+            rm -f clang.tar.zst
+            ;;
+          llvm)
+            echo "Downloading LLVM Clang..."
+            git clone --depth=1 https://github.com/llvm/llvm-project toolchain
+            ;;
+          lilium)
+            echo "Downloading Lilium Clang..."
+            git clone --depth=1 https://github.com/liliumproject/clang toolchain
+            ;;
+          gcc)
+            echo "Downloading GCC toolchain..."
+            mkdir -p toolchain/gcc64 toolchain/gcc32
+            wget -q --show-progress \
+              https://releases.linaro.org/components/toolchain/binaries/latest-7/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz \
+              -O gcc64.tar.xz
+            wget -q --show-progress \
+              https://releases.linaro.org/components/toolchain/binaries/latest-7/arm-linux-gnueabihf/gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabihf.tar.xz \
+              -O gcc32.tar.xz
+            tar -xf gcc64.tar.xz -C toolchain/gcc64 --strip-components=1
+            tar -xf gcc32.tar.xz -C toolchain/gcc32 --strip-components=1
+            rm -f gcc64.tar.xz gcc32.tar.xz
+            ;;
+        esac
+      working-directory: ${{ steps.workspace.outputs.workspace }}
+
+    - name: Set Toolchain Path & Variables
+      id: tc
+      run: |
+        TC="${{ github.event.inputs.TOOLCHAIN }}"
+        WORKSPACE="${{ steps.workspace.outputs.workspace }}"
+
+        case "$TC" in
+          aosp|neutron|llvm|lilium)
+            TC_PATH="$WORKSPACE/toolchain/bin"
+            TC_LABEL="${TC^}-Clang"
+
+            CLANG_VER=$("$TC_PATH/clang" --version | head -n1 \
+              | perl -pe 's/\(http.*?\)//gs' \
+              | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')
+
+            echo "TC_PATH=$TC_PATH"                 >> $GITHUB_OUTPUT
+            echo "TC_LABEL=$TC_LABEL"               >> $GITHUB_OUTPUT
+            echo "CLANG_VERSION=$CLANG_VER"         >> $GITHUB_OUTPUT
+            echo "IS_CLANG=true"                    >> $GITHUB_OUTPUT
+            ;;
+          gcc)
+            GCC64="$WORKSPACE/toolchain/gcc64/bin"
+            GCC32="$WORKSPACE/toolchain/gcc32/bin"
+            echo "TC_PATH=$GCC64:$GCC32:/usr/bin"   >> $GITHUB_OUTPUT
+            echo "TC_LABEL=GCC"                     >> $GITHUB_OUTPUT
+            echo "CLANG_VERSION=GCC"                >> $GITHUB_OUTPUT
+            echo "IS_CLANG=false"                   >> $GITHUB_OUTPUT
+            ;;
+        esac
+
+    - name: Clone Kernel Source
+      id: kernel
+      run: |
+        git clone --depth=1 \
+          ${{ github.event.inputs.KERNEL_TREE }} \
+          -b ${{ github.event.inputs.KERNEL_TREE_BRANCH }} \
+          kernel_tree
+        echo "kernel_dir=$(pwd)/kernel_tree" >> $GITHUB_OUTPUT
+      working-directory: ${{ steps.workspace.outputs.workspace }}
+
+    - name: Clone AnyKernel3
+      id: ak3
+      run: |
+        git clone --depth=1 \
+          ${{ github.event.inputs.ANYKERNEL3_REPO }} \
+          -b ${{ github.event.inputs.ANYKERNEL3_BRANCH }} \
+          AnyKernel3
+        echo "ak3_dir=$(pwd)/AnyKernel3" >> $GITHUB_OUTPUT
+      working-directory: ${{ steps.workspace.outputs.workspace }}
+
+    - name: Cache ccache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.workspace.outputs.workspace }}/ccache
+        key: ccache-munch-${{ github.event.inputs.TOOLCHAIN }}-${{ github.sha }}
+        restore-keys: |
+          ccache-munch-${{ github.event.inputs.TOOLCHAIN }}-
+
+    - name: Set Defconfig
+      id: defconfig
+      run: |
+        TC="${{ github.event.inputs.TOOLCHAIN }}"
+        if [[ "$TC" == "gcc" ]]; then
+          echo "defconfig=vendor/munch_gcc_defconfig" >> $GITHUB_OUTPUT
+        else
+          echo "defconfig=vendor/munch_defconfig" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Patch AnyKernel3 Device Name
+      run: |
+        sed -i "/devicename=/c\devicename=munch" anykernel.sh
+      working-directory: ${{ steps.ak3.outputs.ak3_dir }}
+
+    - name: Build Kernel Config
+      run: |
+        export PATH="${{ steps.tc.outputs.TC_PATH }}:$PATH"
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export KBUILD_BUILD_USER="E404"
+        export KBUILD_BUILD_HOST="github-ci"
+
+        if [[ "${{ steps.tc.outputs.IS_CLANG }}" == "true" ]]; then
+          export CC=clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          export LLVM=1
+          export LLVM_IAS=1
+
+          make O=out \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            LLVM=1 LLVM_IAS=1 \
+            ${{ steps.defconfig.outputs.defconfig }}
+        else
+          export CC=aarch64-linux-gnu-gcc
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+
+          make O=out \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            ${{ steps.defconfig.outputs.defconfig }}
+        fi
+
+        # Disable KALLSYMS (mirrors compiler.sh behaviour)
+        sed -i '/CONFIG_KALLSYMS=/c\CONFIG_KALLSYMS=n' out/.config
+        sed -i '/CONFIG_KALLSYMS_BASE_RELATIVE=/c\CONFIG_KALLSYMS_BASE_RELATIVE=n' out/.config
+      working-directory: ${{ steps.kernel.outputs.kernel_dir }}
+
+    - name: Compile Kernel
+      id: build
+      run: |
+        export PATH="${{ steps.tc.outputs.TC_PATH }}:$PATH"
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export KBUILD_BUILD_USER="E404"
+        export KBUILD_BUILD_HOST="github-ci"
+        export CCACHE_DIR="${{ steps.workspace.outputs.workspace }}/ccache"
+
+        MAKE_FLAGS=(
+          -j$(nproc)
+          O=out
+        )
+
+        if [[ "${{ steps.tc.outputs.IS_CLANG }}" == "true" ]]; then
+          echo "-- Compiling with Clang --"
+          MAKE_FLAGS+=(
+            CC="ccache clang"
+            CROSS_COMPILE=aarch64-linux-gnu-
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+            LLVM=1
+            LLVM_IAS=1
+            LD=ld.lld
+            AR=llvm-ar
+            NM=llvm-nm
+            OBJCOPY=llvm-objcopy
+            OBJDUMP=llvm-objdump
+            STRIP=llvm-strip
+          )
+        else
+          echo "-- Compiling with GCC --"
+          MAKE_FLAGS+=(
+            CC="ccache aarch64-linux-gnu-gcc"
+            CROSS_COMPILE=aarch64-linux-gnu-
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          )
+        fi
+
+        make "${MAKE_FLAGS[@]}" 2>&1 | tee "${{ steps.workspace.outputs.workspace }}/compile.log"
+
+        echo "-- CCache Stats --"
+        ccache -s
+
+        echo "elapsed=$(($(date +%s) - ${{ steps.date.outputs.start_time }}))" >> $GITHUB_OUTPUT
+      working-directory: ${{ steps.kernel.outputs.kernel_dir }}
+
+    - name: Package with AnyKernel3
+      id: zip
+      run: |
+        AK3="${{ steps.ak3.outputs.ak3_dir }}"
+        KERNEL="${{ steps.kernel.outputs.kernel_dir }}"
+        WORKSPACE="${{ steps.workspace.outputs.workspace }}"
+
+        K_IMG="$KERNEL/out/arch/arm64/boot/Image"
+        K_DTBO="$KERNEL/out/arch/arm64/boot/dtbo.img"
+        K_DTB="$KERNEL/out/arch/arm64/boot/dtb"
+
+        [[ ! -f "$K_IMG" ]] && echo "!! Kernel Image not found !!" && exit 1
+
+        cp "$K_IMG"  "$AK3/MUNCH-Image"
+        cp "$K_DTBO" "$AK3/MUNCH-dtbo.img"
+        cp "$K_DTB"  "$AK3/MUNCH-dtb"
+
+        ZIP_NAME="RE404-${{ github.event.inputs.BUILD_TYPE }}-MUNCH-${{ steps.date.outputs.build_date }}.zip"
+
+        cd "$AK3"
+        zip -r9 "$WORKSPACE/$ZIP_NAME" \
+          META-INF/ tools/ \
+          MUNCH-Image MUNCH-dtb MUNCH-dtbo.img \
+          anykernel.sh
+
+        echo "zip_name=$ZIP_NAME"         >> $GITHUB_OUTPUT
+        echo "zip_path=$WORKSPACE/$ZIP_NAME" >> $GITHUB_OUTPUT
+
+        DIFF=${{ steps.build.outputs.elapsed }}
+        echo ""
+        echo "=========================================="
+        echo "Build done in $((DIFF / 60))m $((DIFF % 60))s"
+        echo "Output zip : $ZIP_NAME"
+        echo "Zip size   : $(du -h "$WORKSPACE/$ZIP_NAME" | cut -f1)"
+        echo "=========================================="
+
+    - name: Upload to Release
+      if: github.event.inputs.UPLOAD_TO_RELEASE == 'true'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ${{ steps.zip.outputs.zip_path }}
+        name: RE404-MUNCH-${{ steps.date.outputs.build_date }}
+        tag_name: RE404-MUNCH-${{ steps.date.outputs.build_date }}
+        body: |
+          ## RE404 Kernel - Munch
+
+          **Build Information:**
+          - **Device**: Redmi K40 Pro / POCO F3 (munch)
+          - **Compiler**: ${{ steps.tc.outputs.CLANG_VERSION }}
+          - **Build Type**: ${{ github.event.inputs.BUILD_TYPE }}
+          - **Kernel Branch**: ${{ github.event.inputs.KERNEL_TREE_BRANCH }}
+          - **Build Date**: ${{ steps.date.outputs.build_time }}
+          - **Build Time**: ${{ steps.build.outputs.elapsed }}s
+
+          **Action**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        token: ${{ secrets.RELEASE_PAT }}
+        repository: ${{ github.event.inputs.RELEASE_REPO }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+
+    - name: Upload Kernel Zip as Artifact
+      if: github.event.inputs.UPLOAD_TO_RELEASE != 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.zip.outputs.zip_name }}
+        path: ${{ steps.zip.outputs.zip_path }}
+        retention-days: 30
+
+    - name: Send Telegram Notification
+      if: always()
+      env:
+        TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        CHATID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        ELAPSED=${{ steps.build.outputs.elapsed }}
+        STATUS="${{ job.status }}"
+        ZIP="${{ steps.zip.outputs.zip_path }}"
+        TC_LABEL="${{ steps.tc.outputs.TC_LABEL }}"
+        BRANCH="${{ github.event.inputs.KERNEL_TREE_BRANCH }}"
+        BUILD_TYPE="${{ github.event.inputs.BUILD_TYPE }}"
+        BUILD_DATE="${{ steps.date.outputs.build_time }}"
+
+        send_msg() {
+          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            -d chat_id="$CHATID" \
+            -d text="$1" \
+            -d parse_mode="html" \
+            -d disable_web_page_preview="true"
+        }
+
+        send_file() {
+          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendDocument" \
+            -F chat_id="$CHATID" \
+            -F document=@"$1" \
+            -F parse_mode="html"
+        }
+
+        if [[ "$STATUS" == "success" ]]; then
+          MINS=$((ELAPSED / 60))
+          SECS=$((ELAPSED % 60))
+          MSG=$(printf '<b>Build Success!</b>\n<code>Device : MUNCH</code>\n<code>Type   : %s</code>\n<code>Branch : %s</code>\n<code>TC     : %s</code>\n<code>Date   : %s</code>\n<code>Time   : %dm %ds</code>' \
+            "$BUILD_TYPE" "$BRANCH" "$TC_LABEL" "$BUILD_DATE" "$MINS" "$SECS")
+          [[ -f "$ZIP" ]] && send_file "$ZIP" || send_msg "$MSG"
+        else
+          LOGFILE="${{ steps.workspace.outputs.workspace }}/compile.log"
+          send_msg "<b>! Kernel Build Error !</b>"
+          [[ -f "$LOGFILE" ]] && send_file "$LOGFILE"
+        fi
+
+    - name: Cleanup
+      if: always()
+      run: echo "Workflow complete."
