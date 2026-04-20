@@ -213,11 +213,9 @@ jobs:
           echo "kernel_dir=$(pwd)/kernel_tree" >> $GITHUB_OUTPUT
 
       - name: Setup KernelSU Next
-        if: github.event.inputs.KERNELSU_NEXT == 'true'
-        working-directory: ${{ steps.kernel.outputs.kernel_dir }}
         run: |
-          echo "Setting up KernelSU Next (legacy)..."
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
+          cd kernel_tree
+          bash nextpatch.sh
 
       - name: Clone AnyKernel3
         id: ak3
