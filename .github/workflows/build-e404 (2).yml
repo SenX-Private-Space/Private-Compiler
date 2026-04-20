@@ -225,38 +225,18 @@ jobs:
       working-directory: ${{ steps.workspace.outputs.workspace }}
 
     - name: Setup KernelSU Next
-      if: github.event.inputs.KERNELSU_NEXT == 'true'
       run: |
-        KSUNEXT_BRANCH="${{ github.event.inputs.KSUNEXT_BRANCH }}"
-        echo "-- Setting up KernelSU Next ($KSUNEXT_BRANCH) --"
-
-        curl -LSs \
-          "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/$KSUNEXT_BRANCH/kernel/setup.sh" \
-          | bash -s "$KSUNEXT_BRANCH"
-
-        # Determine correct defconfig path
-        if [[ "${{ github.event.inputs.TOOLCHAIN }}" == "gcc" ]]; then
-          DEFCONFIG="arch/arm64/configs/vendor/munch_gcc_defconfig"
-        else
-          DEFCONFIG="arch/arm64/configs/vendor/munch_defconfig"
-        fi
-
-        if [[ -f "$DEFCONFIG" ]]; then
-          # Remove any existing entry first, then cleanly append
-          sed -i '/CONFIG_KSU/d' "$DEFCONFIG"
-          echo "CONFIG_KSU=y" >> "$DEFCONFIG"
-          echo "-- CONFIG_KSU=y injected into $DEFCONFIG --"
-        else
-          echo "!! $DEFCONFIG not found — skipping CONFIG_KSU injection !!"
-        fi
-      working-directory: ${{ steps.kernel.outputs.kernel_dir }}
+          cd kernel_tree
+          bash nextpatch.sh
 
     - name: Clone AnyKernel3
       id: ak3
       run: |
         git clone --depth=1 \
           ${{ github.event.inputs.ANYKERNEL3_REPO }} \
-          -b ${{ github.event.inputs.ANYKERNEL3_BRANCH }} \
+          -b ${{ github.event.inputs.ANY        run: |
+          cd kernel_tree
+          bash nextpatch.shKERNEL3_BRANCH }} \
           AnyKernel3
         echo "ak3_dir=$(pwd)/AnyKernel3" >> $GITHUB_OUTPUT
       working-directory: ${{ steps.workspace.outputs.workspace }}
