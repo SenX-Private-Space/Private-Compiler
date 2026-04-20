@@ -121,7 +121,7 @@ jobs:
 
       - name: Cache Toolchain
         id: cache-tc
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.workspace.outputs.workspace }}/toolchain
           key: toolchain-${{ github.event.inputs.TOOLCHAIN }}-v1
@@ -230,7 +230,7 @@ jobs:
           echo "ak3_dir=$(pwd)/AnyKernel3" >> $GITHUB_OUTPUT
 
       - name: Cache ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.workspace.outputs.workspace }}/ccache
           key: ccache-munch-${{ github.event.inputs.TOOLCHAIN }}-${{ github.sha }}
@@ -373,7 +373,7 @@ jobs:
 
       - name: Upload Kernel Zip as Artifact
         if: github.event.inputs.UPLOAD_TO_RELEASE != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.zip.outputs.zip_name }}
           path: ${{ steps.zip.outputs.zip_path }}
