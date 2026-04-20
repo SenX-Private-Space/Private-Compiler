@@ -59,7 +59,7 @@ jobs:
 
     steps:
     - name: Checkout Actions Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Generate Build Date
       id: date
@@ -71,7 +71,7 @@ jobs:
     - name: Display Build Configuration
       run: |
         echo "::group::Build Configuration"
-        echo "Device      : MUNCH (Redmi K40 Pro / POCO F3)"
+        echo "Device      : MUNCH"
         echo "Kernel Tree : ${{ github.event.inputs.KERNEL_TREE }}"
         echo "Branch      : ${{ github.event.inputs.KERNEL_TREE_BRANCH }}"
         echo "Build Type  : ${{ github.event.inputs.BUILD_TYPE }}"
@@ -115,7 +115,7 @@ jobs:
 
     - name: Cache Toolchain
       id: cache-tc
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ steps.workspace.outputs.workspace }}/toolchain
         key: toolchain-${{ github.event.inputs.TOOLCHAIN }}-v1
@@ -366,7 +366,7 @@ jobs:
 
     - name: Upload to Release
       if: github.event.inputs.UPLOAD_TO_RELEASE == 'true'
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v7
       with:
         files: ${{ steps.zip.outputs.zip_path }}
         name: RE404-MUNCH-${{ steps.date.outputs.build_date }}
@@ -390,7 +390,7 @@ jobs:
 
     - name: Upload Kernel Zip as Artifact
       if: github.event.inputs.UPLOAD_TO_RELEASE != 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ steps.zip.outputs.zip_name }}
         path: ${{ steps.zip.outputs.zip_path }}
